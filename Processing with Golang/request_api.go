@@ -16,19 +16,23 @@ import (
 	"time"
 )
 
-// Resultado de cada request
+// -----------------------------
+// Estrutura do resultado final
+// -----------------------------
 type SiteResult struct {
-	Input        string `json:"input"`         // entrada original
-	ResolvedURL  string `json:"resolved_url"`  // URL final após redirects
-	HTTPStatus   int    `json:"http_status"`   // status code
-	Title        string `json:"title"`         // conteúdo do <title>
-	ContentLen   int64  `json:"content_length"`// tamanho do body (se conhecido)
-	Error        string `json:"error,omitempty"`
-	CheckedAt    string `json:"checked_at"`
-	ElapsedMS    int64  `json:"elapsed_ms"`
+	Input       string `json:"input"`
+	ResolvedURL string `json:"resolved_url"`
+	HTTPStatus  int    `json:"http_status"`
+	Title       string `json:"title"`
+	ContentLen  int64  `json:"content_length"`
+	Error       string `json:"error,omitempty"`
+	CheckedAt   string `json:"checked_at"`
+	ElapsedMS   int64  `json:"elapsed_ms"`
 }
 
-// helper: adiciona https:// se faltar esquema
+// -----------------------------
+// Helpers
+// -----------------------------
 func ensureScheme(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -40,7 +44,7 @@ func ensureScheme(raw string) string {
 	return "https://" + raw
 }
 
-// parse <title> com tokenizer (sem dependências extras)
+// parse <title> do HTML
 func parseTitle(r io.Reader) (string, error) {
 	z := html.NewTokenizer(r)
 	for {
@@ -54,7 +58,6 @@ func parseTitle(r io.Reader) (string, error) {
 		case html.StartTagToken:
 			t := z.Token()
 			if t.Data == "title" {
-				// next token should be the title text
 				tt2 := z.Next()
 				if tt2 == html.TextToken {
 					return strings.TrimSpace(string(z.Text())), nil
@@ -65,6 +68,16 @@ func parseTitle(r io.Reader) (string, error) {
 	}
 }
 
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n-3] + "..."
+}
+
+// -----------------------------
+// Workers HTTP
+// -----------------------------
 func worker(id int, jobs <-chan string, results chan<- SiteResult, client *http.Client, path string, delay time.Duration, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for raw := range jobs {
@@ -73,7 +86,6 @@ func worker(id int, jobs <-chan string, results chan<- SiteResult, client *http.
 		raw = ensureScheme(raw)
 		target := raw
 		if path != "" {
-			// garante que path comece com '/'
 			if !strings.HasPrefix(path, "/") {
 				path = "/" + path
 			}
@@ -82,14 +94,13 @@ func worker(id int, jobs <-chan string, results chan<- SiteResult, client *http.
 				u.Path = strings.TrimSuffix(u.Path, "/") + path
 				target = u.String()
 			} else {
-				// fallback: concat
 				target = raw + path
 			}
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), client.Timeout)
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
-		req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; bugsites-check/1.0; +https://example.local)")
+		req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; bugsites-check/1.0)")
 
 		res := SiteResult{
 			Input:     input,
@@ -104,26 +115,19 @@ func worker(id int, jobs <-chan string, results chan<- SiteResult, client *http.
 			res.Error = err.Error()
 			results <- res
 			cancel()
-			// delay before next job to be polite
 			time.Sleep(delay)
 			continue
 		}
 
-		// fill fields
 		res.HTTPStatus = resp.StatusCode
 		res.ResolvedURL = resp.Request.URL.String()
 		if resp.ContentLength >= 0 {
 			res.ContentLen = resp.ContentLength
-		} else {
-			// if unknown, try to read up to a limit to compute length (but don't consume full body)
-			// here we won't read body fully to avoid memory bloat; prefer using ContentLength header.
 		}
 
-		// parse title (use limited reader to avoid huge pages)
 		limited := io.LimitReader(resp.Body, 200*1024) // 200 KB
 		title, perr := parseTitle(limited)
 		if perr != nil {
-			// non-fatal
 			res.Error = perr.Error()
 		} else {
 			res.Title = title
@@ -132,32 +136,164 @@ func worker(id int, jobs <-chan string, results chan<- SiteResult, client *http.
 		cancel()
 		res.CheckedAt = time.Now().UTC().Format(time.RFC3339)
 		results <- res
-
-		// politeness
 		time.Sleep(delay)
 	}
 }
 
+// -----------------------------
+// APIs de Bug Bounty
+// -----------------------------
+
+// HackerOne
+func fetchHackerOneScopes(username, apiKey string) ([]string, error) {
+	client := &http.Client{Timeout: 15 * time.Second}
+	req, _ := http.NewRequest("GET", "https://api.hackerone.com/v1/hackers/programs", nil)
+	req.SetBasicAuth(username, apiKey)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("HackerOne status code %d", resp.StatusCode)
+	}
+
+	var data struct {
+		Data []struct {
+			Attributes struct {
+				Handle string `json:"handle"`
+			} `json:"attributes"`
+		} `json:"data"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, err
+	}
+
+	var targets []string
+	for _, prog := range data.Data {
+		if prog.Attributes.Handle != "" {
+			targets = append(targets, fmt.Sprintf("%s.hackerone.com", prog.Attributes.Handle))
+		}
+	}
+	return targets, nil
+}
+
+// Bugcrowd
+func fetchBugcrowdScopes(token string) ([]string, error) {
+	client := &http.Client{Timeout: 15 * time.Second}
+	req, _ := http.NewRequest("GET", "https://api.bugcrowd.com/v2/programs", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("Bugcrowd status code %d", resp.StatusCode)
+	}
+
+	var data struct {
+		Programs []struct {
+			Name   string   `json:"name"`
+			Scopes []string `json:"targets"` // depende da API real
+		} `json:"programs"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, err
+	}
+
+	var targets []string
+	for _, p := range data.Programs {
+		targets = append(targets, p.Scopes...)
+	}
+	return targets, nil
+}
+
+// Intigriti
+func fetchIntigritiScopes(token string) ([]string, error) {
+	client := &http.Client{Timeout: 15 * time.Second}
+	req, _ := http.NewRequest("GET", "https://api.intigriti.com/v1/programs", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil { return nil, err }
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 { return nil, fmt.Errorf("Intigriti status code %d", resp.StatusCode) }
+
+	var data struct {
+		Programs []struct {
+			Name   string   `json:"name"`
+			Scopes []string `json:"targets"` // ajuste conforme API real
+		} `json:"programs"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil { return nil, err }
+
+	var targets []string
+	for _, p := range data.Programs {
+		targets = append(targets, p.Scopes...)
+	}
+	return targets, nil
+}
+
+// YesWeHack
+func fetchYesWeHackScopes(token string) ([]string, error) {
+	client := &http.Client{Timeout: 15 * time.Second}
+	req, _ := http.NewRequest("GET", "https://api.yeswehack.com/api/v1/programs", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil { return nil, err }
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 { return nil, fmt.Errorf("YesWeHack status code %d", resp.StatusCode) }
+
+	var data struct {
+		Programs []struct {
+			Name   string   `json:"name"`
+			Scopes []string `json:"targets"` // ajuste conforme API real
+		} `json:"programs"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil { return nil, err }
+
+	var targets []string
+	for _, p := range data.Programs {
+		targets = append(targets, p.Scopes...)
+	}
+	return targets, nil
+}
+
+// -----------------------------
+// Main
+// -----------------------------
 func main() {
 	// flags
-	targetsFlag := flag.String("targets", "", "Lista de sites separados por vírgula (ex: hackerone.com,bugcrowd.com)")
+	h1User := flag.String("h1-user", "", "HackerOne username")
+	h1Key := flag.String("h1-key", "", "HackerOne API key")
+	bcToken := flag.String("bc-token", "", "Bugcrowd API token")
+	intToken := flag.String("int-token", "", "Intigriti API token")
+	ywhToken := flag.String("ywh-token", "", "YesWeHack API token")
+
 	fileFlag := flag.String("file", "", "Arquivo com uma URL por linha")
 	concurrency := flag.Int("concurrency", 5, "Número de workers concorrentes")
 	timeoutSec := flag.Int("timeout", 15, "Timeout por request (segundos)")
-	delayMS := flag.Int("delay", 300, "Delay entre requests por worker (ms) — para não sobrecarregar")
-	path := flag.String("path", "", "Caminho a anexar a cada host (ex: /programs) — opcional")
+	delayMS := flag.Int("delay", 300, "Delay entre requests por worker (ms)")
+	path := flag.String("path", "", "Caminho a anexar a cada host")
 	outFile := flag.String("out", "results.json", "Arquivo de saída JSON")
 	flag.Parse()
 
-	// monta lista de targets
 	var targets []string
-	if *targetsFlag != "" {
-		for _, t := range strings.Split(*targetsFlag, ",") {
-			if s := strings.TrimSpace(t); s != "" {
-				targets = append(targets, s)
-			}
-		}
-	}
+
+	// Targets via arquivo
 	if *fileFlag != "" {
 		f, err := os.Open(*fileFlag)
 		if err != nil {
@@ -174,29 +310,32 @@ func main() {
 		f.Close()
 	}
 
-	if len(targets) == 0 {
-		// exemplo padrão com plataformas de bug-bounty (públicas)
-		targets = []string{
-			"hackerone.com",
-			"bugcrowd.com",
-			"yeswehack.com",
-			"intigriti.com",
-			"gitlab.com", // alguns programas listam scopes aqui
-			"bountyfactory.io",
-			"facebook.com", // exemplo — REMEMBER: apenas públicos/autorizados
-		}
-		fmt.Println("[info] nenhum target passado; usando lista de exemplo (substitua por seus alvos)")
+	// Targets via APIs
+	if *h1User != "" && *h1Key != "" {
+		if t, err := fetchHackerOneScopes(*h1User, *h1Key); err == nil {
+			targets = append(targets, t...)
+		} else { fmt.Fprintf(os.Stderr, "HackerOne: %v\n", err) }
+	}
+	if *bcToken != "" {
+		if t, err := fetchBugcrowdScopes(*bcToken); err == nil { targets = append(targets, t...) }
+	}
+	if *intToken != "" {
+		if t, err := fetchIntigritiScopes(*intToken); err == nil { targets = append(targets, t...) }
+	}
+	if *ywhToken != "" {
+		if t, err := fetchYesWeHackScopes(*ywhToken); err == nil { targets = append(targets, t...) }
 	}
 
-	// client http com timeout
-	client := &http.Client{
-		Timeout: time.Duration(*timeoutSec) * time.Second,
-		// transport default is fine; you may tune TLS/timeouts if needed
+	if len(targets) == 0 {
+		fmt.Println("[warn] nenhum target definido; finalize a execução passando tokens ou arquivo com URLs")
+		os.Exit(0)
 	}
+
+	// Client HTTP
+	client := &http.Client{Timeout: time.Duration(*timeoutSec) * time.Second}
 
 	jobs := make(chan string, len(targets))
 	resultsCh := make(chan SiteResult, len(targets))
-
 	var wg sync.WaitGroup
 	delay := time.Duration(*delayMS) * time.Millisecond
 
@@ -206,22 +345,13 @@ func main() {
 		go worker(i+1, jobs, resultsCh, client, *path, delay, &wg)
 	}
 
-	// send jobs
-	for _, t := range targets {
-		jobs <- t
-	}
+	for _, t := range targets { jobs <- t }
 	close(jobs)
 
-	// wait finish in goroutine
-	go func() {
-		wg.Wait()
-		close(resultsCh)
-	}()
+	go func() { wg.Wait(); close(resultsCh) }()
 
-	// collect results
 	var all []SiteResult
 	for r := range resultsCh {
-		// print resumo rápido
 		if r.Error != "" {
 			fmt.Printf("ERR  %-30s -> %s\n", r.Input, r.Error)
 		} else {
@@ -243,11 +373,4 @@ func main() {
 	}
 	fout.Close()
 	fmt.Printf("[done] resultados salvos em %s\n", *outFile)
-}
-
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n-3] + "..."
 }
