@@ -425,3 +425,4 @@ main() {
     while true; do
         print_menu
         read -r
+}
