@@ -20,12 +20,55 @@ DRY_RUN=${DRY_RUN:-0}
 TOOLS_PREFIX=${TOOLS_PREFIX:-/opt/autohunting}
 GOINSTALL_BIN=${GOINSTALL_BIN:-$(command -v go || true)}
 mkdir -p "$TOOLS_PREFIX" >/dev/null 2>&1 || true
+TOOLS_PM_INSTALLED=()
+TOOLS_GIT_INSTALLED=()
+GIT_INSTALL_DIR=""  # diretório personalizado fornecido pelo usuário
+
+
+# Mapear pacotes para repositórios Git
+declare -A GIT_REPOS=(
+    [curl]="https://github.com/curl/curl"
+    [jq]="https://github.com/jqlang/jq"
+    [git]="https://github.com/git/git"
+    [go]="https://github.com/golang/go"
+    [subfinder]="https://github.com/projectdiscovery/subfinder"
+    [amass]="https://github.com/OWASP/Amass"
+    [assetfinder]="https://github.com/tomnomnom/assetfinder"
+    [katana]="https://github.com/projectdiscovery/katana"
+    [httpx]="https://github.com/projectdiscovery/httpx"
+    [gau]="https://github.com/lc/gau"
+    [waybackurls]="https://github.com/tomnomnom/waybackurls"
+    [awsbucketdump]="https://github.com/jordanpotti/AWSBucketDump"
+    [aquatone]="https://github.com/michenriksen/aquatone"
+    [eyewitness]="https://github.com/RedSiege/EyeWitness"
+    [linkfinder]="https://github.com/GerbenJavado/LinkFinder"
+    [gf]="https://github.com/tomnomnom/gf"
+    [gitdumper]="https://github.com/arthaud/gitdumper"
+    [reconftw]="https://github.com/six2dez/reconftw"
+    [bugbountytoolkit]="https://github.com/hackerguyarjun/bugbountytoolkit"
+    [nmap]="https://github.com/nmap/nmap"
+    [nuclei]="https://github.com/projectdiscovery/nuclei"
+    [ffuf]="https://github.com/ffuf/ffuf"
+    [gobuster]="https://github.com/OJ/gobuster"
+    [nikto]="https://github.com/sullo/nikto"
+    [sqlmap]="https://github.com/sqlmapproject/sqlmap"
+    [wafw00f]="https://github.com/EnableSecurity/wafw00f"
+    [dalfox]="https://github.com/hahwul/dalfox"
+    [xsstrike]="https://github.com/s0md3v/XSStrike"
+    [gopherus]="https://github.com/tarunkant/Gopherus"
+    [lfisuite]="https://github.com/D35m0nd142/LFISuite"
+    [fimap]="https://github.com/kurobeats/fimap"
+    [oralyzer]="https://github.com/r0eXpeR/Oralyzer"
+    [cmseek]="https://github.com/Tuhinshubhra/CMSeeK"
+    [kiterunner]="https://github.com/assetnote/kiterunner"
+    [metasploit]="https://github.com/rapid7/metasploit-framework"
+)
 
 # =============================
 # Pacotes de ferramentas 
 # =============================
 BASE_PACKAGES=(
-  curl jq git nmap
+  curl jq git nmap go python
 )
 
 RECON_PACKAGES=(
@@ -45,7 +88,7 @@ AUX_RECON=(
 )
 
 MISC_TOOLS=(
-  linkfinder gf postman gitdumper metasploit
+  linkfinder gf gitdumper metasploit
 )
 
 # =============================
@@ -266,14 +309,65 @@ install_array() {
     for pkg in "${arr[@]}"; do
         idx=$((idx+1))
         CURRENT_PKG="$pkg"
-        log_message "INFO" "[$idx/$total] Preparando a instalação de: $CURRENT_PKG"
-        if ! install_one "$pkg"; then
-            log_message "WARN" "Continuando após falha no pacote: $CURRENT_PKG"
+
+        # 1) Se já instalado, pula
+        if is_installed "$pkg"; then
+            log_message "INFO" "[$idx/$total] $pkg já está instalado, pulando."
+            TOOLS_PM_INSTALLED+=("$pkg")
+            continue
         fi
-        sleep "$(awk "BEGIN {print ${DELAY_MS:-300}/1000}")"
+
+        # 2) Tenta instalar via gerenciador
+        log_message "INFO" "[$idx/$total] Tentando instalar $pkg via $CMD_PACK_MANAGER_NAME..."
+        if _exec_install "$pkg"; then
+            TOOLS_PM_INSTALLED+=("$pkg")
+            continue
+        fi
+
+        # 3) Se falhar, fallback via GitHub
+        git_url="${GIT_REPOS[$pkg]:-}"
+        if [ -z "$git_url" ]; then
+            log_message "WARN" "Nenhum repositório GitHub configurado para $pkg. Ignorando."
+            continue
+        fi
+
+        # Testa conexão
+        if ping -c 1 -W 2 "$(echo "$git_url" | awk -F/ '{print $3}')" >/dev/null 2>&1; then
+
+            # Pergunta ao usuário se GIT_INSTALL_DIR está vazio ou False
+            if [[ -z "$GIT_INSTALL_DIR" || "$GIT_INSTALL_DIR" == "False" ]]; then
+                echo -n "Informe um diretório para instalar ferramentas via git (enter = diretório atual, n/no = não usar diretório): "
+                read -r user_dir
+                if [[ -z "$user_dir" ]]; then
+                    GIT_INSTALL_DIR="$(pwd)"
+                elif [[ "$user_dir" =~ ^(n|no)$ ]]; then
+                    GIT_INSTALL_DIR="$(pwd)"
+                else
+                    GIT_INSTALL_DIR="$user_dir"
+                fi
+                log_message "INFO" "Diretório Git definido para futuras instalações: $GIT_INSTALL_DIR"
+            fi
+
+            install_dir="$GIT_INSTALL_DIR/$pkg"
+            mkdir -p "$install_dir"
+            git clone "$git_url" "$install_dir" || {
+                log_message "ERROR" "Falha ao clonar $pkg do GitHub ($git_url)"
+                continue
+            }
+
+            # registra instalação
+            TOOLS_GIT_INSTALLED+=("$pkg")
+            echo "URL = $git_url" >> "$install_dir/install_info.txt"
+            echo "Dir = $install_dir" >> "$install_dir/install_info.txt"
+            log_message "SUCCESS" "Ferramenta $pkg instalada via GitHub em $install_dir"
+
+        else
+            log_message "ERROR" "Não foi possível conectar ao GitHub para $pkg. Ignorando."
+        fi
+
+        sleep "$(awk "BEGIN {print $DELAY_MS/1000}")"
     done
 }
-
 # dedupe helper
 flatten_unique() {
     declare -A seen=()
