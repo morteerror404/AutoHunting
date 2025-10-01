@@ -24,9 +24,6 @@ flowchart TD
 
 ---
 
-## **README.md**
-
-````markdown
 # Bug Bounty Site Checker
 
 Ferramenta para coleta de escopos de programas de Bug Bounty via APIs e verificação de disponibilidade HTTP dos sites.
