@@ -424,5 +424,38 @@ main() {
 
     while true; do
         print_menu
-        read -r
+        read -r options
+        # Handle multiple comma-separated options
+        IFS=',' read -ra opts <<< "$options"
+        for opt in "${opts[@]}"; do
+            case "$opt" in
+                1) install_category_by_name "all" ;;
+                2) install_category_by_name "base" ;;
+                3) install_category_by_name "recon" ;;
+                4) install_category_by_name "scanners" ;;
+                5) install_category_by_name "web" ;;
+                6) install_category_by_name "aux" ;;
+                7) install_category_by_name "misc" ;;
+                8) show_modules ;;
+                9)
+                    echo -e "${BOLD}Verificando instalações...${NC}"
+                    for pkg in "${BASE_PACKAGES[@]}" "${RECON_PACKAGES[@]}" "${SCANNER_PACKAGES[@]}" "${WEB_TOOLS[@]}" "${AUX_RECON[@]}" "${MISC_TOOLS[@]}"; do
+                        if is_installed "$pkg"; then
+                            log_message "INFO" "$pkg: Instalado"
+                        else
+                            log_message "WARN" "$pkg: Não instalado"
+                        fi
+                    done
+                    ;;
+                0)
+                    show_install_summary
+                    echo -e "${BOLD}${GREEN}Instalação concluída!${NC}"
+                    exit 0
+                    ;;
+                *)
+                    log_message "ERROR" "Opção inválida: $opt"
+                    ;;
+            esac
+        done
+    done
 }
