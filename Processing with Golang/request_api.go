@@ -31,6 +31,25 @@ type SiteResult struct {
 }
 
 // -----------------------------
+// Estrutura para api.json
+// -----------------------------
+type APIConfig struct {
+	HackerOne struct {
+		Username string `json:"username"`
+		ApiKey   string `json:"api_key"`
+	} `json:"hackerone"`
+	Bugcrowd struct {
+		Token string `json:"token"`
+	} `json:"bugcrowd"`
+	Intigriti struct {
+		Token string `json:"token"`
+	} `json:"intigriti"`
+	YesWeHack struct {
+		Token string `json:"token"`
+	} `json:"yeswehack"`
+}
+
+// -----------------------------
 // Helpers
 // -----------------------------
 func ensureScheme(raw string) string {
@@ -137,6 +156,7 @@ func worker(id int, jobs <-chan string, results chan<- SiteResult, client *http.
 		res.CheckedAt = time.Now().UTC().Format(time.RFC3339)
 		results <- res
 		time.Sleep(delay)
+		_ = start // placeholder if you later want to calculate overall elapsed
 	}
 }
 
@@ -224,7 +244,9 @@ func fetchIntigritiScopes(token string) ([]string, error) {
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := client.Do(req)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 { return nil, fmt.Errorf("Intigriti status code %d", resp.StatusCode) }
 
@@ -291,6 +313,19 @@ func main() {
 	outFile := flag.String("out", "results.json", "Arquivo de saída JSON")
 	flag.Parse()
 
+	// tentar carregar api.json se existir
+	var apiCfg APIConfig
+	if data, err := os.ReadFile("api.json"); err == nil {
+		if err := json.Unmarshal(data, &apiCfg); err != nil {
+			fmt.Fprintf(os.Stderr, "erro parseando api.json: %v\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "[info] api.json carregado\n")
+		}
+	} else {
+		// arquivo não existe; não é um erro
+		fmt.Fprintf(os.Stderr, "[info] api.json não encontrado, usando flags\n")
+	}
+
 	var targets []string
 
 	// Targets via arquivo
@@ -310,20 +345,47 @@ func main() {
 		f.Close()
 	}
 
+	// decidir credenciais: flags > api.json
+	h1UserVal := *h1User
+	h1KeyVal := *h1Key
+	if h1UserVal == "" && apiCfg.HackerOne.Username != "" {
+		h1UserVal = apiCfg.HackerOne.Username
+	}
+	if h1KeyVal == "" && apiCfg.HackerOne.ApiKey != "" {
+		h1KeyVal = apiCfg.HackerOne.ApiKey
+	}
+
+	bcTokenVal := *bcToken
+	if bcTokenVal == "" && apiCfg.Bugcrowd.Token != "" {
+		bcTokenVal = apiCfg.Bugcrowd.Token
+	}
+
+	intTokenVal := *intToken
+	if intTokenVal == "" && apiCfg.Intigriti.Token != "" {
+		intTokenVal = apiCfg.Intigriti.Token
+	}
+
+	ywhTokenVal := *ywhToken
+	if ywhTokenVal == "" && apiCfg.YesWeHack.Token != "" {
+		ywhTokenVal = apiCfg.YesWeHack.Token
+	}
+
 	// Targets via APIs
-	if *h1User != "" && *h1Key != "" {
-		if t, err := fetchHackerOneScopes(*h1User, *h1Key); err == nil {
+	if h1UserVal != "" && h1KeyVal != "" {
+		if t, err := fetchHackerOneScopes(h1UserVal, h1KeyVal); err == nil {
 			targets = append(targets, t...)
-		} else { fmt.Fprintf(os.Stderr, "HackerOne: %v\n", err) }
+		} else {
+			fmt.Fprintf(os.Stderr, "HackerOne: %v\n", err)
+		}
 	}
-	if *bcToken != "" {
-		if t, err := fetchBugcrowdScopes(*bcToken); err == nil { targets = append(targets, t...) }
+	if bcTokenVal != "" {
+		if t, err := fetchBugcrowdScopes(bcTokenVal); err == nil { targets = append(targets, t...) } else { fmt.Fprintf(os.Stderr, "Bugcrowd: %v\n", err) }
 	}
-	if *intToken != "" {
-		if t, err := fetchIntigritiScopes(*intToken); err == nil { targets = append(targets, t...) }
+	if intTokenVal != "" {
+		if t, err := fetchIntigritiScopes(intTokenVal); err == nil { targets = append(targets, t...) } else { fmt.Fprintf(os.Stderr, "Intigriti: %v\n", err) }
 	}
-	if *ywhToken != "" {
-		if t, err := fetchYesWeHackScopes(*ywhToken); err == nil { targets = append(targets, t...) }
+	if ywhTokenVal != "" {
+		if t, err := fetchYesWeHackScopes(ywhTokenVal); err == nil { targets = append(targets, t...) } else { fmt.Fprintf(os.Stderr, "YesWeHack: %v\n", err) }
 	}
 
 	if len(targets) == 0 {
