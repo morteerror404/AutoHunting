@@ -344,6 +344,8 @@ Este módulo é o processador de resultados e a **inteligência léxica**.
 3.  **Persistência:** Formata os achados em JSON limpo e envia os comandos de `INSERT` para o **DB\_manager.go** para que sejam inseridos na tabela **vulnerability\_findings**.
 4.  **Limpeza de Log:** Processa o *log* de estado do `maestro.go` para criar um relatório de execução limpo.
 
+---
+
 ## Exemplo de Uso
 ```bash
 $ sudo ./install.sh
