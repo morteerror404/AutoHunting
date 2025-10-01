@@ -122,7 +122,7 @@ _exec_install() {
         log_message "DRY" "(simulação) $cmdline"
         return 0
     fi
-    if eval "$cmdline"; then
+    if eval "$cmdline" 2>>"$LOG_FILE"; then
         log_message "SUCCESS" "Instalado: $pkg"
         return 0
     else
@@ -134,12 +134,9 @@ _exec_install() {
 # =============================
 # Map package -> install method
 # =============================
-
-# Função caso de uma merda com o gerenciador de pacotes e no git 
 get_install_cmd() {
     local pkg="$1"
     case "$pkg" in
-        # instala direto pelo Go
         subfinder) echo "GO111MODULE=on ${GOINSTALL_BIN} install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest" ;;
         nuclei) echo "GO111MODULE=on ${GOINSTALL_BIN} install github.com/projectdiscovery/nuclei/v2/cmd/nuclei@latest" ;;
         httpx) echo "GO111MODULE=on ${GOINSTALL_BIN} install github.com/projectdiscovery/httpx/cmd/httpx@latest" ;;
@@ -150,11 +147,9 @@ get_install_cmd() {
         gobuster) echo "GO111MODULE=on ${GOINSTALL_BIN} install github.com/OJ/gobuster/v3@latest" ;;
         dalfox) echo "GO111MODULE=on ${GOINSTALL_BIN} install github.com/hahwul/dalfox/v2@latest" ;;
         aquatone) echo "GO111MODULE=on ${GOINSTALL_BIN} install github.com/michenriksen/aquatone@latest" ;;
-        # instala com o pip do python
         linkfinder) echo "pip3 install linkfinder || true" ;;
         wafw00f) echo "pip3 install wafw00f || true" ;;
         xsstrike) echo "pip3 install xsstrike || true" ;;
-        # instala com git
         katana) echo "git clone https://github.com/projectdiscovery/katana.git ${TOOLS_PREFIX}/katana || true" ;;
         reconftw) echo "git clone https://github.com/six2dez/reconftw.git ${TOOLS_PREFIX}/reconftw || true" ;;
         eyewitness) echo "git clone https://github.com/FortyNorthSecurity/EyeWitness.git ${TOOLS_PREFIX}/EyeWitness || true" ;;
@@ -186,6 +181,15 @@ pkg_binary_candidates() {
         gf) echo "gf" ;;
         kiterunner) echo "kiterunner" ;;
         amass) echo "amass" ;;
+        reconftw) echo "" ;;  # No binary, Git-based
+        bugbountytoolkit) echo "" ;;  # No binary, Git-based
+        awsbucketdump) echo "" ;;  # No binary, Git-based
+        gopherus) echo "gopherus" ;;
+        lfisuite) echo "lfisuite" ;;
+        fimap) echo "fimap" ;;
+        oralyzer) echo "oralyzer" ;;
+        cmseek) echo "cmseek" ;;
+        gitdumper) echo "gitdumper" ;;
         *) echo "$pkg" ;;
     esac
 }
@@ -193,51 +197,53 @@ pkg_binary_candidates() {
 # =============================
 # is_installed
 # =============================
-
-# verifica se já está instalado 
 is_installed() {
     local pkg="$1"
     local candidates
     candidates="$(pkg_binary_candidates "$pkg")"
-    for c in $candidates; do
-        if command -v "$c" >/dev/null 2>&1; then
-            return 0
-        fi
-    done
+    log_message "DEBUG" "Verificando instalação de $pkg com candidatos: $candidates"
+    if [ -n "$candidates" ]; then
+        for c in $candidates; do
+            if command -v "$c" >/dev/null 2>&1; then
+                log_message "DEBUG" "$pkg: Encontrado binário $c"
+                return 0
+            fi
+        done
+    fi
 
     local lower="${pkg,,}"
     for c in "$pkg" "${lower}" "${pkg//_/-}" "${pkg//-/_}"; do
         if command -v "$c" >/dev/null 2>&1; then
+            log_message "DEBUG" "$pkg: Encontrado binário variante $c"
             return 0
         fi
     done
 
     case "${CMD_PACK_MANAGER_NAME-}" in
-        apt) dpkg -s "$pkg" >/dev/null 2>&1 && return 0 ;;
-        pacman) pacman -Qi "$pkg" >/dev/null 2>&1 && return 0 ;;
-        dnf|yum) rpm -q "$pkg" >/dev/null 2>&1 && return 0 ;;
+        apt) dpkg -s "$pkg" >/dev/null 2>&1 && { log_message "DEBUG" "$pkg: Encontrado via dpkg"; return 0; } ;;
+        pacman) pacman -Qi "$pkg" >/dev/null 2>&1 && { log_message "DEBUG" "$pkg: Encontrado via pacman"; return 0; } ;;
+        dnf|yum) rpm -q "$pkg" >/dev/null 2>&1 && { log_message "DEBUG" "$pkg: Encontrado via rpm"; return 0; } ;;
     esac
+    log_message "DEBUG" "$pkg: Não instalado"
     return 1
 }
 
 # =============================
 # Install one package
 # =============================
-
-# instala só um pacote, Não sei porque o usuário vai escolher essa opção mais tem
 install_one() {
     local pkg="$1"
+    log_message "DEBUG" "Tentando instalar: $pkg"
 
-    # já instalado
     if is_installed "$pkg"; then
         log_message "INFO" "Pulando (já instalado): $pkg"
         TOOLS_PM_INSTALLED+=("$pkg")
         return 0
     fi
 
-    # método especial
     local special
-    special="$(get_install_cmd "$pkg" 2>/dev/null || true)"
+    special="$(get_install_cmd "$pkg" 2>>"$LOG_FILE" || true)"
+    log_message "DEBUG" "Método especial para $pkg: $special"
 
     if [[ -n "$special" ]]; then
         if [[ "$special" == GO111MODULE* ]] && [[ -z "$GOINSTALL_BIN" ]]; then
@@ -251,21 +257,23 @@ install_one() {
         if [ "${DRY_RUN:-0}" -eq 1 ]; then
             log_message "DRY" "(simulação) $special"
         else
-            eval "$special" && {
+            if eval "$special" 2>>"$LOG_FILE"; then
                 log_message "SUCCESS" "Instalado via método especial: $pkg"
+                TOOLS_PM_INSTALLED+=("$pkg")
                 return 0
-            } || log_message "WARN" "Falhou método especial: $pkg"
+            else
+                log_message "WARN" "Falhou método especial: $pkg"
+            fi
         fi
     fi
 
-    # fallback PM
     if _exec_install "$pkg"; then
         TOOLS_PM_INSTALLED+=("$pkg")
         return 0
     fi
 
-    # fallback Git
     local git_url="${GIT_REPOS[$pkg]:-}"
+    log_message "DEBUG" "Tentando Git para $pkg: $git_url"
     if [[ -z "$git_url" ]]; then
         log_message "WARN" "Nenhum GitHub configurado para $pkg"
         return 1
@@ -273,29 +281,36 @@ install_one() {
 
     if ping -c1 -W2 "$(echo "$git_url" | awk -F/ '{print $3}')" >/dev/null 2>&1; then
         if [[ -z "$GIT_INSTALL_DIR" || "$GIT_INSTALL_DIR" == "False" ]]; then
-            read -rp "Diretório Git (enter = pwd, n/no = pwd): " user_dir
+            log_message "INFO" "Prompt para diretório Git (enter = pwd, n/no = pwd)"
+            read -rp "Diretório Git: " user_dir
             [[ -z "$user_dir" || "$user_dir" =~ ^(n|no)$ ]] && GIT_INSTALL_DIR="$(pwd)" || GIT_INSTALL_DIR="$user_dir"
         fi
 
         local install_dir="$GIT_INSTALL_DIR/$pkg"
+        log_message "DEBUG" "Clonando $pkg para $install_dir"
         mkdir -p "$install_dir"
-        git clone "$git_url" "$install_dir" || { log_message "ERROR" "Falha ao clonar $pkg"; return 1; }
-
-        TOOLS_GIT_INSTALLED+=("$pkg")
-        echo "URL = $git_url" > "$install_dir/install_info.txt"
-        echo "Dir = $install_dir" >> "$install_dir/install_info.txt"
-        log_message "SUCCESS" "Instalado via Git: $pkg"
+        if [ "${DRY_RUN:-0}" -eq 1 ]; then
+            log_message "DRY" "(simulação) git clone $git_url $install_dir"
+        else
+            if git clone "$git_url" "$install_dir" 2>>"$LOG_FILE"; then
+                TOOLS_GIT_INSTALLED+=("$pkg")
+                echo "URL = $git_url" > "$install_dir/install_info.txt"
+                echo "Dir = $install_dir" >> "$install_dir/install_info.txt"
+                log_message "SUCCESS" "Instalado via Git: $pkg"
+            else
+                log_message "ERROR" "Falha ao clonar $pkg"
+                return 1
+            fi
+        fi
     else
         log_message "ERROR" "Não foi possível conectar ao GitHub para $pkg"
+        return 1
     fi
 }
 
 # =============================
 # Install array with parallel
 # =============================
-
-# usa paralelismo para deixar o script mais rapido 
-
 install_array() {
     local arr=("$@")
     local idx=0 total=${#arr[@]}
@@ -387,10 +402,16 @@ verifica_basico() {
     if [ "$(id -u)" -ne 0 ] && [ -z "${SUDO_USER:-}" ]; then
         echo -e "${RED}Erro: Execute como root (sudo)!${NC}"; exit 1
     fi
+    command -v git >/dev/null 2>&1 || { log_message "ERROR" "Git não encontrado. Instale-o com 'pacman -S git'."; exit 1; }
+    command -v tee >/dev/null 2>&1 || { log_message "ERROR" "Tee não encontrado. Instale-o com 'pacman -S coreutils'."; exit 1; }
 }
 
+# =============================
+# Configurar log
+# =============================
 configurar_log() {
     mkdir -p "$(dirname "$LOG_FILE")"
+    chmod 666 "$LOG_FILE" 2>/dev/null || true
     exec > >(tee -a "$LOG_FILE") 2>&1
     echo -e "${BLUE}Instalação iniciada em $(date)${NC}"
 }
@@ -425,7 +446,10 @@ main() {
     while true; do
         print_menu
         read -r options
-        # Handle multiple comma-separated options
+        if [ -z "$options" ]; then
+            log_message "ERROR" "Nenhuma opção fornecida"
+            continue
+        fi
         IFS=',' read -ra opts <<< "$options"
         for opt in "${opts[@]}"; do
             case "$opt" in
