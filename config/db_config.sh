@@ -44,7 +44,7 @@ chmod 700 "$CRED_DIR" 2>/dev/null || {
 }
 
 # ---------- Logging utilities ----------
-verifica_basico() {
+verifica_root() {
     if [ "$(id -u)" -ne 0 ] && [ -z "${SUDO_USER:-}" ]; then
         log "ERROR" "Erro: Execute como root (sudo)!"
         echo -e "${RED}Erro: Execute como root (sudo)!${NC}"
@@ -779,7 +779,7 @@ select_db_menu() {
 
 # ---------- Main menu ----------
 main_menu() {
-    verifica_basico
+    verifica_root
     configurar_log
     detect_package_manager
     while true; do

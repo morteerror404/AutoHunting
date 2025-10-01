@@ -31,7 +31,7 @@ type SiteResult struct {
 }
 
 // -----------------------------
-// Estrutura para api.json
+// Estrutura para tokens.json
 // -----------------------------
 type APIConfig struct {
 	HackerOne struct {
@@ -576,17 +576,17 @@ func main() {
 	outFile := flag.String("out", "results.json", "Arquivo de saída JSON")
 	flag.Parse()
 
-	// tentar carregar api.json se existir
+	// tentar carregar tokens.json se existir
 	var apiCfg APIConfig
-	if data, err := os.ReadFile("api.json"); err == nil {
+	if data, err := os.ReadFile("tokens.json"); err == nil {
 		if err := json.Unmarshal(data, &apiCfg); err != nil {
-			fmt.Fprintf(os.Stderr, "erro parseando api.json: %v\n", err)
+			fmt.Fprintf(os.Stderr, "erro parseando tokens.json: %v\n", err)
 		} else {
-			fmt.Fprintf(os.Stderr, "[info] api.json carregado\n")
+			fmt.Fprintf(os.Stderr, "[info] tokens.json carregado\n")
 		}
 	} else {
 		// arquivo não existe; não é um erro
-		fmt.Fprintf(os.Stderr, "[info] api.json não encontrado, usando flags\n")
+		fmt.Fprintf(os.Stderr, "[info] tokens.json não encontrado, usando flags\n")
 	}
 
 	var targets []string
@@ -608,7 +608,7 @@ func main() {
 		f.Close()
 	}
 
-	// decidir credenciais: flags > api.json
+	// decidir credenciais: flags > tokens.json
 	h1UserVal := *h1User
 	h1KeyVal := *h1Key
 	if h1UserVal == "" && apiCfg.HackerOne.Username != "" {

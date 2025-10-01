@@ -1,5 +1,114 @@
 # AutoHunting - README
 
+```mermaid
+---
+config:
+  theme: dark
+---
+
+flowchart TD
+
+  %% ==========================================================
+  %% Subgraph de Configuração Inicial (SETUP)
+  %% ==========================================================
+  subgraph Setup
+    DB_Config[DB_Config.sh]
+    Install[Install.sh]
+  end
+  
+  %% ==========================================================
+  %% Subgraph de Coleta de Dados Brutos (INPUT)
+  %% ==========================================================
+  subgraph Request_API.go
+    A[tokens.json] --> ReqAPI_B[1. Consulta APIs de BB]
+    ReqAPI_B --> API_BB{APIs de Plataformas}
+    API_BB -- JSON Estruturado H1, etc. --> Proc_E
+    API_BB -- Texto/Link da Politica --> AI_D
+  end
+
+  %% ==========================================================
+  %% Subgraph de Interpretacao de IA
+  %% ==========================================================
+  subgraph AI_scope_interpreter.go
+    AI_D[2. Envia Politica para LLM] --> AI_F[3. Recebe Array JSON de Alvos]
+    AI_F --> Proc_E
+  end
+
+  %% ==========================================================
+  %% Subgraph de Processamento e Limpeza
+  %% ==========================================================
+  subgraph Process_results.go
+    Proc_E[4. Unifica e Valida Conteudo - API + IA] --> F[5. TXT/Array JSON Limpo]
+    F --> DBM_G
+  end
+
+  %% ==========================================================
+  %% Subgraph de Gerenciamento do Banco de Dados
+  %% ==========================================================
+  subgraph DB_manager.go
+    H[Comandos SQL/Conexao] --> DBM_G[6. Armazena Comandos/Verifica Conexao]
+    DBM_G --> DBM_I[7. Insere/Atualiza Alvos na h1_structured_scopes]
+    DBM_I --> DB_I[DB: h1_structured_scopes]
+    
+    %% Conexão de Retorno do Cleaner
+    DBM_N[18. Insere Resultados no DB] --> DB_N[DB: tool_execution_results]
+  end
+
+  %% ==========================================================
+  %% Subgraph de Analise e Priorizacao
+  %% ==========================================================
+  subgraph Show_Time.go
+    DB_I --> ST_J[8. Consome Escopos Ativos]
+    DB_N --> ST_J
+    
+    ST_J --> ST_K1[9. Gerar Relatorio Resumido]
+    ST_J --> ST_K2[10. Criar Mapa de Alvos para Val. Manual]
+    ST_J --> ST_K3[11. Criar Fila de Execucao Priorizada]
+    
+    ST_K1 --> Relatorio_Resumo[Relatorio/Dashboard]
+    ST_K2 --> Mapa_Manual[Mapa de Prioridade - Visual]
+    ST_K3 --> Fila_Maestro[Fila de Tarefas Priorizada]
+  end
+
+  %% ==========================================================
+  %% Subgraph de Orquestracao
+  %% ==========================================================
+  subgraph maestro.go
+    L[commands.json] --> M_L[12. Define Ordem e Comandos]
+    Fila_Maestro --> M_L
+    M_L --> R_R
+    M_L --> M_O[14. Cria Relatorio de Estado]
+  end
+  
+  %% ==========================================================
+  %% Subgraph de Execução Motor
+  %% ==========================================================
+  subgraph runner.go
+    R_R[13. Recebe Instrucoes/Analisa Checkpoint] --> Ferramentas[14. Roda Ferramenta]
+    Ferramentas --> Pasta_Bruta[15. Armazena Resultados Brutos]
+    R_R -- Checkpoint de Execucao --> DB_N
+  end
+
+  %% ==========================================================
+  %% Subgraph de Tratamento de Resultados e Limpeza
+  %% ==========================================================
+  subgraph cleaner.go
+    Pasta_Bruta --> C_P1[16. Análise Léxica - Palavra-Chave / Detecção de Vetores]
+    M_O --> C_P2[17. Limpa Log de Execucao]
+    C_P1 -- Achados Estruturados / JSON --> DBM_N
+    C_P2 --> Q[Log Limpo]
+  end
+
+
+  %% ==========================================================
+  %% FLUXO DE CONEXÃO
+  %% ==========================================================
+  
+  %% Setup Conexoes
+  Install --> R_R
+  DB_Config --> DBM_G
+```
+
 ## Descrição
 O `install.sh` é um script Bash projetado para automatizar a instalação de ferramentas de segurança cibernética e reconciliação (recon) em sistemas Linux baseados em Arch (usando `pacman`), Debian (apt), Fedora (dnf/yum) ou outros sistemas compatíveis. Ele suporta instalações via gerenciadores de pacotes do sistema, Go, Python (pip), e clonagem de repositórios Git. O script é interativo, permitindo ao usuário selecionar categorias de ferramentas ou instalar todas de uma vez, com suporte a instalações paralelas para maior eficiência.
 
