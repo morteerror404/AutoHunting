@@ -295,6 +295,269 @@ func fetchYesWeHackScopes(token string) ([]string, error) {
 }
 
 // -----------------------------
+// HackerOne: programas ativos + structured scopes
+// -----------------------------
+
+// fetchHackerOneProgramHandles busca handles dos programas acessíveis ao hacker (filtra public_mode)
+func fetchHackerOneProgramHandles(username, apiKey string) ([]string, error) {
+	client := &http.Client{Timeout: 20 * time.Second}
+	req, _ := http.NewRequest("GET", "https://api.hackerone.com/v1/hackers/programs", nil)
+	req.SetBasicAuth(username, apiKey)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("HackerOne status code %d", resp.StatusCode)
+	}
+
+	var data struct {
+		Data []struct {
+			Attributes struct {
+				Handle string `json:"handle"`
+				State  string `json:"state"`
+			} `json:"attributes"`
+		} `json:"data"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, err
+	}
+
+	var handles []string
+	for _, it := range data.Data {
+		if strings.EqualFold(it.Attributes.State, "public_mode") && it.Attributes.Handle != "" {
+			handles = append(handles, it.Attributes.Handle)
+		}
+	}
+	return handles, nil
+}
+
+// fetchHackerOneStructuredScopes consulta /structured_scopes e retorna identifiers filtrados (eligible_for_submission, eligible_for_bounty e asset types comuns)
+func fetchHackerOneStructuredScopes(handle, username, apiKey string) ([]string, error) {
+	endpoint := fmt.Sprintf("https://api.hackerone.com/v1/hackers/programs/%s/structured_scopes", url.PathEscape(handle))
+	client := &http.Client{Timeout: 20 * time.Second}
+	req, _ := http.NewRequest("GET", endpoint, nil)
+	req.SetBasicAuth(username, apiKey)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("HackerOne structured_scopes status code %d for %s", resp.StatusCode, handle)
+	}
+
+	var data struct {
+		Data []struct {
+			Attributes struct {
+				Identifier              string `json:"identifier"`
+				EligibleForSubmission   bool   `json:"eligible_for_submission"`
+				EligibleForBounty       bool   `json:"eligible_for_bounty"`
+				AssetType               string `json:"asset_type"`
+			} `json:"attributes"`
+		} `json:"data"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, err
+	}
+
+	var out []string
+	for _, item := range data.Data {
+		attr := item.Attributes
+		if !attr.EligibleForSubmission || !attr.EligibleForBounty {
+			continue
+		}
+		if attr.AssetType == "" {
+			// aceitar mesmo se não tiver asset_type, mas normalmente vem
+			out = append(out, attr.Identifier)
+			continue
+		}
+		// filtrar por tipos úteis (Domain, Url, Cidr)
+		if strings.Contains(strings.ToLower(attr.AssetType), "domain") || strings.Contains(strings.ToLower(attr.AssetType), "url") || strings.Contains(strings.ToLower(attr.AssetType), "cidr") {
+			out = append(out, attr.Identifier)
+		}
+	}
+	return out, nil
+}
+
+// helper: escreve slice de strings em arquivo (uma linha por item)
+func writeLinesToFile(path string, lines []string) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	w := bufio.NewWriter(f)
+	for _, l := range lines {
+		if strings.TrimSpace(l) == "" { continue }
+		if _, err := w.WriteString(l + "
+		"); err != nil { return err }
+	}
+	return w.Flush()
+}
+
+// writeLinesRotate renomeia o arquivo existente para <basename>-old.txt (removendo qualquer antigo -old primeiro)
+// e depois cria o novo arquivo com as linhas fornecidas.
+func writeLinesRotate(path string, lines []string) error {
+	// se não existir, apenas criar
+	if _, err := os.Stat(path); err == nil {
+		// arquivo existe
+		// construir nome do arquivo antigo: inserir "-old" antes da extensão, se houver
+		ext := path
+		old := ""
+		if idx := strings.LastIndex(ext, "."); idx != -1 {
+			old = ext[:idx] + "-old" + ext[idx:]
+		} else {
+			old = ext + "-old"
+		}
+
+		// remover old se já existir
+		if _, err := os.Stat(old); err == nil {
+			if err := os.Remove(old); err != nil {
+				return fmt.Errorf("erro removendo %s: %v", old, err)
+			}
+		}
+
+		// renomear
+		if err := os.Rename(path, old); err != nil {
+			return fmt.Errorf("erro renomeando %s -> %s: %v", path, old, err)
+		}
+	}
+
+	// criar novo arquivo e escrever
+	return writeLinesToFile(path, lines)
+}
+	defer f.Close()
+	w := bufio.NewWriter(f)
+	for _, l := range lines {
+		if strings.TrimSpace(l) == "" { continue }
+		if _, err := w.WriteString(l + "
+"); err != nil { return err }
+	}
+	return w.Flush()
+}
+
+// -----------------------------
+// getScopes: coleta escopos por plataforma, escreve em arquivos separados e imprime status sucinto
+// -----------------------------
+func getScopes(h1User, h1Key, bcToken, intToken, ywhToken string) {
+	// armazenar comandos/endpoints/headers em variáveis (maior parte das informações do "comando")
+	h1Endpoint := "https://api.hackerone.com/v1/hackers/programs"
+	h1Structured := "https://api.hackerone.com/v1/hackers/programs/%s/structured_scopes"
+	h1Auth := fmt.Sprintf("%s:%s", h1User, h1Key)
+
+	bcEndpoint := "https://api.bugcrowd.com/v2/programs"
+	bcAuth := fmt.Sprintf("Bearer %s", bcToken)
+
+	intEndpoint := "https://api.intigriti.com/v1/programs"
+	intAuth := fmt.Sprintf("Bearer %s", intToken)
+
+	ywhEndpoint := "https://api.yeswehack.com/api/v1/programs"
+	ywhAuth := fmt.Sprintf("Bearer %s", ywhToken)
+
+	// HackerOne
+	if h1User != "" && h1Key != "" {
+		fmt.Fprintf(os.Stderr, "[hackerone] buscando handles...
+")
+		handles, err := fetchHackerOneProgramHandles(h1User, h1Key)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[hackerone] erro: %v
+", err)
+		} else {
+			// salvar handles
+			if err := writeLinesRotate("hackerone_programs.txt", handles); err != nil { fmt.Fprintf(os.Stderr, "[hackerone] erro salvando handles: %v
+", err) }
+			fmt.Printf("[hackerone] handles: %d
+", len(handles))
+			// para cada handle, buscar structured scopes e agregar
+			var allScopes []string
+			for _, h := range handles {
+				scopes, err := fetchHackerOneStructuredScopes(h, h1User, h1Key)
+				if err != nil {
+					// log sucinto
+					fmt.Fprintf(os.Stderr, "[hackerone] %s -> err
+", h)
+					continue
+				}
+				allScopes = append(allScopes, scopes...)
+			}
+			if err := writeLinesRotate("hackerone_scopes.txt", allScopes); err != nil { fmt.Fprintf(os.Stderr, "[hackerone] erro salvando scopes: %v
+", err) }
+			fmt.Printf("[hackerone] scopes colhidos: %d (arquivo: hackerone_scopes.txt)
+", len(allScopes))
+			// (opcional) imprimir endpoints usados de forma sucinta
+			_ = h1Endpoint
+			_ = h1Structured
+			_ = h1Auth
+		}
+	}
+
+	// Bugcrowd
+	if bcToken != "" {
+		fmt.Fprintf(os.Stderr, "[bugcrowd] consultando API...
+")
+		s, err := fetchBugcrowdScopes(bcToken)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[bugcrowd] erro: %v
+", err)
+		} else {
+			if err := writeLinesRotate("bugcrowd_scopes.txt", s); err != nil { fmt.Fprintf(os.Stderr, "[bugcrowd] erro salvando scopes: %v
+", err) }
+			fmt.Printf("[bugcrowd] scopes colhidos: %d (arquivo: bugcrowd_scopes.txt)
+", len(s))
+			_ = bcEndpoint
+			_ = bcAuth
+		}
+	}
+
+	// Intigriti
+	if intToken != "" {
+		fmt.Fprintf(os.Stderr, "[intigriti] consultando API...
+")
+		s, err := fetchIntigritiScopes(intToken)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[intigriti] erro: %v
+", err)
+		} else {
+			if err := writeLinesRotate("intigriti_scopes.txt", s); err != nil { fmt.Fprintf(os.Stderr, "[intigriti] erro salvando scopes: %v
+", err) }
+			fmt.Printf("[intigriti] scopes colhidos: %d (arquivo: intigriti_scopes.txt)
+", len(s))
+			_ = intEndpoint
+			_ = intAuth
+		}
+	}
+
+	// YesWeHack
+	if ywhToken != "" {
+		fmt.Fprintf(os.Stderr, "[yeswehack] consultando API...
+")
+		s, err := fetchYesWeHackScopes(ywhToken)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[yeswehack] erro: %v
+", err)
+		} else {
+			if err := writeLinesRotate("yeswehack_scopes.txt", s); err != nil { fmt.Fprintf(os.Stderr, "[yeswehack] erro salvando scopes: %v
+", err) }
+			fmt.Printf("[yeswehack] scopes colhidos: %d (arquivo: yeswehack_scopes.txt)
+", len(s))
+			_ = ywhEndpoint
+			_ = ywhAuth
+		}
+	}
+
+	// breve resumo final
+	fmt.Fprintln(os.Stderr, "[getScopes] coleta finalizada")
+}
+
+// -----------------------------
 // Main
 // -----------------------------
 func main() {
