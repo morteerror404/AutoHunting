@@ -4,10 +4,10 @@
 flowchart TD
     A[Usuário] -->|Fornece tokens ou arquivo de URLs| B[Entrada de Dados]
     B --> C{Coleta de Targets}
-    C -->|HackerOne| D[fetchHackerOneScopes(username, key)]
-    C -->|Bugcrowd| E[fetchBugcrowdScopes(token)]
-    C -->|Intigriti| F[fetchIntigritiScopes(token)]
-    C -->|YesWeHack| G[fetchYesWeHackScopes(token)]
+    C -->|HackerOne| D[fetchHackerOneScopes]
+    C -->|Bugcrowd| E[fetchBugcrowdScopes]
+    C -->|Intigriti| F[fetchIntigritiScopes]
+    C -->|YesWeHack| G[fetchYesWeHackScopes]
     D --> H[Lista de Targets]
     E --> H
     F --> H
