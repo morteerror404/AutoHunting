@@ -399,7 +399,7 @@ configurar_log() {
 # Menu
 # =============================
 print_menu() {
-    echo -e "${BOLD}${GREEN}=== HyprArch Installer ===${NC}"
+    echo -e "${BOLD}${GREEN}=== Installer ===${NC}"
     echo "Escolha categorias (múltiplas separadas por vírgula):"
     echo " 1) Todas"
     echo " 2) Base"
