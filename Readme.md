@@ -142,7 +142,6 @@ AutoHunting
     └───json
 ```
 
-
 ### Configurações
 - **Cores**: Usa códigos ANSI para mensagens coloridas no terminal.
 - **Variáveis**:
