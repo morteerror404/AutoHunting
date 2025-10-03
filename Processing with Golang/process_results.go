@@ -7,6 +7,8 @@ import (
     "log"
     "os"
     "path/filepath"
+    "time"
+    _ "github.com/mattn/go-sqlite3"
 )
 
 var (
@@ -136,6 +138,84 @@ func checkDBConnection() error {
 }
 
 // ============================
+// Verificar extensões na pasta suja
+// ============================
+func checkDirtyFolderExtensions() error {
+    if dirtyPath == "" {
+        return fmt.Errorf("Configure o caminho da pasta suja primeiro!")
+    }
+    files, err := os.ReadDir(dirtyPath)
+    if err != nil {
+        return fmt.Errorf("Erro ao ler pasta suja: %v", err)
+    }
+    extensionCount := make(map[string]int)
+    for _, f := range files {
+        if f.IsDir() {
+            continue
+        }
+        ext := filepath.Ext(f.Name())
+        if ext == "" {
+            ext = "sem extensão"
+        }
+        extensionCount[ext]++
+    }
+    fmt.Println("Extensões encontradas na pasta suja:")
+    for ext, count := range extensionCount {
+        fmt.Printf("%s: %d arquivo(s)\n", ext, count)
+    }
+    return nil
+}
+
+// ============================
+// Salvar informações dos arquivos em um arquivo de texto
+// ============================
+func saveFileInfoToFile(outputFile string) error {
+    if dirtyPath == "" {
+        return fmt.Errorf("Configure o caminho da pasta suja primeiro!")
+    }
+    if outputFile == "" {
+        return fmt.Errorf("Informe o caminho do arquivo de saída!")
+    }
+    files, err := os.ReadDir(dirtyPath)
+    if err != nil {
+        return fmt.Errorf("Erro ao ler pasta suja: %v", err)
+    }
+    file, err := os.Create(outputFile)
+    if err != nil {
+        return fmt.Errorf("Erro ao criar arquivo de saída: %v", err)
+    }
+    defer file.Close()
+    writer := bufio.NewWriter(file)
+    for _, f := range files {
+        if f.IsDir() {
+            continue
+        }
+        info, err := f.Info()
+        if err != nil {
+            log.Printf("Erro ao obter informações do arquivo %s: %v\n", f.Name(), err)
+            continue
+        }
+        ext := filepath.Ext(f.Name())
+        if ext == "" {
+            ext = "sem extensão"
+        }
+        line := fmt.Sprintf("Nome: %s, Extensão: %s, Tamanho: %d bytes, Modificação: %s\n",
+            f.Name(), ext, info.Size(), info.ModTime().Format(time.RFC3339))
+        _, err = writer.WriteString(line)
+        if err != nil {
+            log.Printf("Erro ao escrever no arquivo de saída: %v\n", err)
+            continue
+        }
+    }
+    err = writer.Flush()
+    if err != nil {
+        return fmt.Errorf("Erro ao salvar dados no arquivo: %v", err)
+    }
+    fmt.Printf("Informações dos arquivos salvas em: %s\n", outputFile)
+    return nil
+}
+
+// ============================
 // Menu interativo
 // ============================
 func menu() {
@@ -150,6 +230,8 @@ func menu() {
         fmt.Println("6) Criar pastas suja e limpa")
         fmt.Println("7) Processar arquivos da pasta limpa")
         fmt.Println("8) Verificar conexão com o DB")
+        fmt.Println("9) Verificar extensões na pasta suja")
+        fmt.Println("10) Salvar informações dos arquivos")
         fmt.Println("0) Sair")
         fmt.Print("Escolha uma opção: ")
         input, _ := reader.ReadString('\n')
@@ -197,6 +279,23 @@ func menu() {
             processCleanFiles(db)
         case "8":
             err := checkDBConnection()
+            if err != nil {
+                log.Println(err)
+            }
+        case "9":
+            err := checkDirtyFolderExtensions()
+            if err != nil {
+                log.Println(err)
+            }
+        case "10":
+            if dirtyPath == "" {
+                fmt.Println("Configure o caminho da pasta suja primeiro!")
+                continue
+            }
+            fmt.Print("Informe o caminho do arquivo de saída (ex: info.txt): ")
+            outputFile, _ := reader.ReadString('\n')
+            outputFile = outputFile[:len(outputFile)-1]
+            err := saveFileInfoToFile(outputFile)
             if err != nil {
                 log.Println(err)
             }
