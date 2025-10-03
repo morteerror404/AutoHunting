@@ -134,7 +134,7 @@ O `install.sh` é um script Bash projetado para automatizar a instalação de fe
 ## Estrutura do Script
 
 ```txt
-AutoHunting
+AutoHunting/
 ├───config/
 |      ├───db_config.sh
 |      └───Readme.md
