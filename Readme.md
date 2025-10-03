@@ -133,6 +133,16 @@ O `install.sh` é um script Bash projetado para automatizar a instalação de fe
 
 ## Estrutura do Script
 
+```txt
+AutoHunting
+├───config/
+|      ├───db_config.sh
+|      └───Readme.md
+└───Processing with Golang
+    └───json
+```
+
+
 ### Configurações
 - **Cores**: Usa códigos ANSI para mensagens coloridas no terminal.
 - **Variáveis**:
