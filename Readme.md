@@ -139,7 +139,13 @@ AutoHunting
 |      ├───db_config.sh
 |      └───Readme.md
 └───Processing with Golang
+    ├───process_results.go
+    ├───request_api.go
+    ├───runner.go
+    ├───Readme.md
     └───json
+         ├───env.json
+         └───token.json
 ```
 
 ### Configurações
