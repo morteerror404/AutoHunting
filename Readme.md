@@ -138,12 +138,12 @@ AutoHunting
 ├───config/
 |      ├───db_config.sh
 |      └───Readme.md
-└───Processing with Golang
+└───Processing with Golang/
     ├───process_results.go
     ├───request_api.go
     ├───runner.go
     ├───Readme.md
-    └───json
+    └───json/
          ├───env.json
          └───token.json
 ```
