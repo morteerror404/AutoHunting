@@ -578,7 +578,7 @@ func main() {
 
 	// tentar carregar tokens.json se existir
 	var apiCfg APIConfig
-	if data, err := os.ReadFile("tokens.json"); err == nil {
+	if data, err := os.ReadFile("./json/tokens.json"); err == nil {
 		if err := json.Unmarshal(data, &apiCfg); err != nil {
 			fmt.Fprintf(os.Stderr, "erro parseando tokens.json: %v\n", err)
 		} else {
