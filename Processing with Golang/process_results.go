@@ -1,156 +1,214 @@
 package main
 
 import (
-	"bufio"
-	"database/sql"
-	"fmt"
-	"log"
-	"os"
-	"path/filepath"
-
-	_ "github.com/mattn/go-sqlite3"
+    "bufio"
+    "database/sql"
+    "fmt"
+    "log"
+    "os"
+    "path/filepath"
 )
 
 var (
-	dbPath     string
-	dirtyPath  string
-	cleanPath  string
+    dbPath     string
+    dirtyPath  string
+    cleanPath  string
 )
 
 // ============================
-// Função para criar o banco
+// Abrir conexão com o banco
 // ============================
-func initDB() *sql.DB {
-	db, err := sql.Open("sqlite3", dbPath)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	createTable := `
-	CREATE TABLE IF NOT EXISTS files (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		name TEXT NOT NULL,
-		status TEXT NOT NULL
-	);`
-	_, err = db.Exec(createTable)
-	if err != nil {
-		log.Fatal(err)
-	}
-	return db
+func openDB() *sql.DB {
+    db, err := sql.Open("sqlite3", dbPath)
+    if err != nil {
+        log.Fatal("Erro ao abrir conexão com o DB:", err)
+    }
+    return db
 }
 
 // ============================
 // Registrar arquivo no DB
 // ============================
 func registerFile(db *sql.DB, filename string, status string) {
-	_, err := db.Exec("INSERT INTO files (name, status) VALUES (?, ?)", filename, status)
-	if err != nil {
-		log.Println("Erro ao registrar arquivo:", err)
-	}
+    _, err := db.Exec("INSERT INTO files (name, status) VALUES (?, ?)", filename, status)
+    if err != nil {
+        log.Println("Erro ao registrar arquivo:", err)
+    }
 }
 
 // ============================
 // Listar arquivos do DB
 // ============================
 func listFiles(db *sql.DB) {
-	rows, err := db.Query("SELECT id, name, status FROM files")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer rows.Close()
-
-	fmt.Println("Arquivos registrados no DB:")
-	for rows.Next() {
-		var id int
-		var name, status string
-		rows.Scan(&id, &name, &status)
-		fmt.Printf("[%d] %s - %s\n", id, name, status)
-	}
+    rows, err := db.Query("SELECT id, name, status FROM files")
+    if err != nil {
+        log.Fatal("Erro ao listar arquivos do DB:", err)
+    }
+    defer rows.Close()
+    fmt.Println("Arquivos registrados no DB:")
+    for rows.Next() {
+        var id int
+        var name, status string
+        rows.Scan(&id, &name, &status)
+        fmt.Printf("[%d] %s - %s\n", id, name, status)
+    }
 }
 
 // ============================
 // Processar arquivos sujos
 // ============================
 func processFiles(db *sql.DB) {
-	files, err := os.ReadDir(dirtyPath)
-	if err != nil {
-		log.Fatal("Erro ao ler pasta suja:", err)
-	}
+    files, err := os.ReadDir(dirtyPath)
+    if err != nil {
+        log.Fatal("Erro ao ler pasta suja:", err)
+    }
+    for _, f := range files {
+        if f.IsDir() {
+            continue
+        }
+        oldPath := filepath.Join(dirtyPath, f.Name())
+        newPath := filepath.Join(cleanPath, f.Name())
+        // Simulação de tratamento -> mover para "limpa"
+        err := os.Rename(oldPath, newPath)
+        if err != nil {
+            log.Println("Erro ao mover arquivo:", err)
+            continue
+        }
+        registerFile(db, f.Name(), "tratado")
+        fmt.Println("Arquivo tratado:", f.Name())
+    }
+}
 
-	for _, f := range files {
-		if f.IsDir() {
-			continue
-		}
-		oldPath := filepath.Join(dirtyPath, f.Name())
-		newPath := filepath.Join(cleanPath, f.Name())
+// ============================
+// Processar arquivos da pasta limpa
+// ============================
+func processCleanFiles(db *sql.DB) {
+    files, err := os.ReadDir(cleanPath)
+    if err != nil {
+        log.Fatal("Erro ao ler pasta limpa:", err)
+    }
+    for _, f := range files {
+        if f.IsDir() {
+            continue
+        }
+        registerFile(db, f.Name(), "limpo")
+        fmt.Println("Arquivo limpo registrado:", f.Name())
+    }
+}
 
-		// Simulação de tratamento -> mover para "limpa"
-		err := os.Rename(oldPath, newPath)
-		if err != nil {
-			log.Println("Erro ao mover arquivo:", err)
-			continue
-		}
+// ============================
+// Criar pastas suja e limpa
+// ============================
+func createFolders() error {
+    if dirtyPath == "" || cleanPath == "" {
+        return fmt.Errorf("Configure os caminhos da pasta suja e limpa primeiro!")
+    }
+    err := os.MkdirAll(dirtyPath, 0755)
+    if err != nil {
+        return fmt.Errorf("Erro ao criar pasta suja: %v", err)
+    }
+    err = os.MkdirAll(cleanPath, 0755)
+    if err != nil {
+        return fmt.Errorf("Erro ao criar pasta limpa: %v", err)
+    }
+    fmt.Println("Pastas criadas com sucesso:", dirtyPath, "e", cleanPath)
+    return nil
+}
 
-		registerFile(db, f.Name(), "tratado")
-		fmt.Println("Arquivo tratado:", f.Name())
-	}
+// ============================
+// Verificar conexão com o DB
+// ============================
+func checkDBConnection() error {
+    if dbPath == "" {
+        return fmt.Errorf("Configure o caminho do DB primeiro!")
+    }
+    db, err := sql.Open("sqlite3", dbPath)
+    if err != nil {
+        return fmt.Errorf("Erro ao abrir conexão com o DB: %v", err)
+    }
+    defer db.Close()
+    err = db.Ping()
+    if err != nil {
+        return fmt.Errorf("Erro ao verificar conexão com o DB: %v", err)
+    }
+    fmt.Println("Conexão com o banco de dados bem-sucedida!")
+    return nil
 }
 
 // ============================
 // Menu interativo
 // ============================
 func menu() {
-	reader := bufio.NewReader(os.Stdin)
-
-	for {
-		fmt.Println("\n===== MENU =====")
-		fmt.Println("1) Definir pasta suja")
-		fmt.Println("2) Definir pasta limpa")
-		fmt.Println("3) Definir caminho do DB")
-		fmt.Println("4) Processar arquivos")
-		fmt.Println("5) Listar arquivos no DB")
-		fmt.Println("0) Sair")
-		fmt.Print("Escolha uma opção: ")
-
-		input, _ := reader.ReadString('\n')
-		switch input[:len(input)-1] {
-		case "1":
-			fmt.Print("Informe o caminho da pasta suja: ")
-			dirtyPath, _ = reader.ReadString('\n')
-			dirtyPath = dirtyPath[:len(dirtyPath)-1]
-		case "2":
-			fmt.Print("Informe o caminho da pasta limpa: ")
-			cleanPath, _ = reader.ReadString('\n')
-			cleanPath = cleanPath[:len(cleanPath)-1]
-		case "3":
-			fmt.Print("Informe o caminho do DB (ex: data.db): ")
-			dbPath, _ = reader.ReadString('\n')
-			dbPath = dbPath[:len(dbPath)-1]
-		case "4":
-			if dbPath == "" || dirtyPath == "" || cleanPath == "" {
-				fmt.Println("⚠️ Configure os caminhos antes de processar!")
-				continue
-			}
-			db := initDB()
-			defer db.Close()
-			processFiles(db)
-		case "5":
-			if dbPath == "" {
-				fmt.Println("⚠️ Configure o DB primeiro!")
-				continue
-			}
-			db := initDB()
-			defer db.Close()
-			listFiles(db)
-		case "0":
-			fmt.Println("Saindo...")
-			return
-		default:
-			fmt.Println("Opção inválida")
-		}
-	}
+    reader := bufio.NewReader(os.Stdin)
+    for {
+        fmt.Println("\n===== MENU =====")
+        fmt.Println("1) Definir pasta suja")
+        fmt.Println("2) Definir pasta limpa")
+        fmt.Println("3) Definir caminho do DB")
+        fmt.Println("4) Processar arquivos da pasta suja")
+        fmt.Println("5) Listar arquivos no DB")
+        fmt.Println("6) Criar pastas suja e limpa")
+        fmt.Println("7) Processar arquivos da pasta limpa")
+        fmt.Println("8) Verificar conexão com o DB")
+        fmt.Println("0) Sair")
+        fmt.Print("Escolha uma opção: ")
+        input, _ := reader.ReadString('\n')
+        switch input[:len(input)-1] {
+        case "1":
+            fmt.Print("Informe o caminho da pasta suja: ")
+            dirtyPath, _ = reader.ReadString('\n')
+            dirtyPath = dirtyPath[:len(dirtyPath)-1]
+        case "2":
+            fmt.Print("Informe o caminho da pasta limpa: ")
+            cleanPath, _ = reader.ReadString('\n')
+            cleanPath = cleanPath[:len(cleanPath)-1]
+        case "3":
+            fmt.Print("Informe o caminho do DB (ex: data.db): ")
+            dbPath, _ = reader.ReadString('\n')
+            dbPath = dbPath[:len(dbPath)-1]
+        case "4":
+            if dbPath == "" || dirtyPath == "" || cleanPath == "" {
+                fmt.Println("Configure os caminhos antes de processar!")
+                continue
+            }
+            db := openDB()
+            defer db.Close()
+            processFiles(db)
+        case "5":
+            if dbPath == "" {
+                fmt.Println("Configure o DB primeiro!")
+                continue
+            }
+            db := openDB()
+            defer db.Close()
+            listFiles(db)
+        case "6":
+            err := createFolders()
+            if err != nil {
+                log.Println(err)
+            }
+        case "7":
+            if dbPath == "" || cleanPath == "" {
+                fmt.Println("Configure o caminho do DB e da pasta limpa primeiro!")
+                continue
+            }
+            db := openDB()
+            defer db.Close()
+            processCleanFiles(db)
+        case "8":
+            err := checkDBConnection()
+            if err != nil {
+                log.Println(err)
+            }
+        case "0":
+            fmt.Println("Saindo...")
+            return
+        default:
+            fmt.Println("Opção inválida")
+        }
+    }
 }
 
 func main() {
-	menu()
+    menu()
 }
