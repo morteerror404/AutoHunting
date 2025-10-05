@@ -306,7 +306,3 @@ func menu() {
         }
     }
 }
-
-func main() {
-    menu()
-}
