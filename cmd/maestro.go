@@ -8,6 +8,11 @@ import (
 	"strings"
 	"time"
 
+	"api"
+	"data/cleaner"
+	"data/db"
+	"data/runner"
+	"utils"
 )
 
 type Config struct {
@@ -78,7 +83,7 @@ func main() {
 	}
 	logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: "LoadTokens", Status: "Success"})
 
-	// Receber plataforma de show_time.go (ex.: via arquivo selected_platform.json)
+	// Receber plataforma de show_time.go
 	platform, err := loadSelectedPlatform()
 	if err != nil {
 		logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: "LoadSelectedPlatform", Status: "Failed", Error: err.Error()})
@@ -98,7 +103,7 @@ func main() {
 	}
 	logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: "RequestAPI", Status: "Success"})
 
-	// Executar runner para varreduras (nmap e ffuf)
+	// Executar runner para varreduras
 	fmt.Println("Executando varreduras...")
 	outDir := "output"
 	for tool, args := range map[string]string{
@@ -143,14 +148,14 @@ func main() {
 
 	// Executar db_manager para inserir no banco
 	fmt.Println("Inserindo resultados no banco de dados...")
-	db, err := db.ConnectDB()
+	dbConn, err := db.ConnectDB()
 	if err != nil {
 		logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: "ConnectDB", Status: "Failed", Error: err.Error()})
 		saveExecutionLog(logs)
 		fmt.Printf("Erro ao conectar ao DB: %v\n", err)
 		os.Exit(1)
 	}
-	defer db.Close()
+	defer dbConn.Close()
 	logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: "ConnectDB", Status: "Success"})
 
 	for _, f := range files {
@@ -158,7 +163,7 @@ func main() {
 			continue
 		}
 		filename := filepath.Join(outDir, f.Name())
-		if err := db.ProcessCleanFile(filename, db); err != nil {
+		if err := db.ProcessCleanFile(filename, dbConn); err != nil {
 			logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: fmt.Sprintf("ProcessCleanFile_%s", f.Name()), Status: "Failed", Error: err.Error()})
 			fmt.Printf("Erro ao processar arquivo limpo %s: %v\n", filename, err)
 			continue
@@ -198,7 +203,7 @@ func loadTokens() (Tokens, error) {
 	return tokens, nil
 }
 
-// loadSelectedPlatform carrega a plataforma selecionada (ex.: de show_time.go)
+// loadSelectedPlatform carrega a plataforma selecionada
 func loadSelectedPlatform() (string, error) {
 	var selection struct {
 		Platform string `json:"platform"`
