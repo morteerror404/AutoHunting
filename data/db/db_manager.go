@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"AutoHunting/utils"
+	"github.com/morteerror404/AutoHunting/utils"
 )
 
 // DBConfig estrutura para as configurações do banco
@@ -53,10 +53,21 @@ func ConnectDB() (*sql.DB, error) {
 
 	dbType := dbInfo.ConfigDB.Type
 
-	connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
-		dbInfo.ConfigDB.Host, dbInfo.ConfigDB.Port, dbInfo.ConfigDB.User, dbInfo.ConfigDB.Password, dbInfo.ConfigDB.DBName)
+	var connStr string
+	switch dbType {
+	case "postgres":
+		connStr = fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
+			dbInfo.ConfigDB.Host, dbInfo.ConfigDB.Port, dbInfo.ConfigDB.User, dbInfo.ConfigDB.Password, dbInfo.ConfigDB.DBName)
+	case "sqlite3":
+		// Para sqlite, o "dbname" pode ser o caminho do arquivo.
+		connStr = dbInfo.ConfigDB.DBName
+	default:
+		return nil, fmt.Errorf("tipo de banco de dados não suportado: %s", dbType)
+	}
+
 	db, err := sql.Open(dbType, connStr)
 	if err != nil {
+		// sql.Open não retorna erro para strings de conexão mal formatadas, mas sim no primeiro uso.
 		return nil, fmt.Errorf("erro ao abrir conexão com o DB: %w", err)
 	}
 
@@ -67,7 +78,13 @@ func ConnectDB() (*sql.DB, error) {
 	}
 	_ = commands // Usar 'commands' em alguma lógica futura para evitar erro de variável não utilizada
 
-	fmt.Println("Conexão com PostgreSQL estabelecida com sucesso!")
+	// Ping para verificar a conexão real
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("falha ao conectar com o banco de dados (%s): %w", dbType, err)
+	}
+
+	fmt.Printf("Conexão com %s estabelecida com sucesso!\n", dbType)
 	return db, nil
 }
 
@@ -77,43 +94,73 @@ func ProcessCleanFile(filename string, db *sql.DB) error {
 	if err != nil {
 		return fmt.Errorf("erro ao abrir arquivo limpo %s: %w", filename, err)
 	}
+	defer inputFile.Close()
 
 	baseName := strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
 	parts := strings.Split(baseName, "_clean_")
 	if len(parts) != 2 {
-		return fmt.Errorf("formato de nome de arquivo inválido. Esperado 'ferramenta_clean_template.txt'")
+		return fmt.Errorf("formato de nome de arquivo inválido: %s. Esperado 'ferramenta_alvo_timestamp_clean_template.txt'", baseName)
 	}
 
-	tableName := strings.ReplaceAll(baseName, "_clean_", "_")
+	// Extrai o nome da tabela e o escopo do nome do arquivo
+	// Ex: nmap_example.com_2023_clean_open_ports -> Tabela: nmap_open_ports, Escopo: example.com
+	templateName := parts[1]
+	toolAndScope := parts[0]
+
+	var tool, scope string
+	if idx := strings.Index(toolAndScope, "_"); idx != -1 {
+		tool = toolAndScope[:idx]
+		// O resto, menos o timestamp, é o escopo.
+		// Esta é uma simplificação; uma abordagem mais robusta seria necessária se os escopos contiverem '_'.
+		scopeParts := strings.Split(toolAndScope[idx+1:], "_")
+		scope = strings.Join(scopeParts[:len(scopeParts)-1], "_") // Remove o timestamp
+	} else {
+		return fmt.Errorf("não foi possível determinar a ferramenta e o escopo de: %s", toolAndScope)
+	}
+
+	tableName := fmt.Sprintf("%s_%s", tool, templateName)
 	fmt.Printf("Processando dados para a tabela: %s\n", tableName)
+
 	scanner := bufio.NewScanner(inputFile)
 	tx, err := db.Begin()
-
 	if err != nil {
 		return fmt.Errorf("erro ao iniciar transação: %w", err)
 	}
+	// Garante que a transação seja desfeita em caso de erro
+	defer tx.Rollback()
 
 	insertCount := 0
 	for scanner.Scan() {
 		line := scanner.Text()
-		fields := strings.Split(line, "|")
-		if tableName == "nmap_open_ports" && len(fields) == 1 {
-			port := fields[0]
-			scopeID := "xyz_temp_scope" // O ID do escopo deve ser lido de alguma outra fonte
-			query := fmt.Sprintf("INSERT INTO %s (port, scope_id) VALUES ($1, $2)", tableName)
-			_, err := tx.Exec(query, port, scopeID)
-			if err != nil {
-				tx.Rollback()
-				return fmt.Errorf("erro ao inserir porta %s na tabela %s: %w", port, tableName, err)
-			}
-			insertCount++
+		if line == "" {
+			continue
 		}
+		fields := strings.Split(line, "|")
+
+		// Constrói a query de forma segura e dinâmica
+		columns := append(fields, scope)
+		placeholders := make([]string, len(columns))
+		for i := range columns {
+			placeholders[i] = fmt.Sprintf("$%d", i+1)
+		}
+		query := fmt.Sprintf("INSERT INTO %s VALUES (%s)", tableName, strings.Join(placeholders, ", "))
+
+		// Converte colunas para []interface{} para o Exec
+		args := make([]interface{}, len(columns))
+		for i, v := range columns {
+			args[i] = v
+		}
+
+		if _, err := tx.Exec(query, args...); err != nil {
+			// O defer tx.Rollback() cuidará do rollback
+			return fmt.Errorf("erro ao inserir na tabela %s: %w", tableName, err)
+		}
+		insertCount++
 	}
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("erro ao commitar transação: %w", err)
 	}
 	fmt.Printf("Processamento concluído. %d registros inseridos na tabela %s.\n", insertCount, tableName)
-	defer inputFile.Close()
 	return nil
 }

@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"AutoHunting/api"
-	"AutoHunting/data/cleaner"
-	"AutoHunting/data/db"
-	"AutoHunting/data/runner"
-	"AutoHunting/utils"
+	"github.com/morteerror404/AutoHunting/api"
+	"github.com/morteerror404/AutoHunting/data/cleaner"
+	"github.com/morteerror404/AutoHunting/data/db"
+	"github.com/morteerror404/AutoHunting/data/runner"
+	"github.com/morteerror404/AutoHunting/utils"
 )
 
 // MaestroContext contém todas as configurações e estado para uma execução do maestro.

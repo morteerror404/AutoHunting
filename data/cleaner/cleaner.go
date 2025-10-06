@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"AutoHunting/utils"
+	"github.com/morteerror404/AutoHunting/utils"
 )
 
 // Estruturas (As mesmas do exemplo anterior)

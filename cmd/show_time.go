@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"AutoHunting/data/db"
-	"AutoHunting/utils"
+	"github.com/morteerror404/AutoHunting/data/db"
+	"github.com/morteerror404/AutoHunting/utils"
 )
 
 type Tokens struct {

@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"golang.org/x/net/html"
+	"golang.org/x/net/html" // Adicionado ao go.mod
 	"io"
 	"net/http"
 	"net/url"
@@ -401,49 +401,7 @@ func writeLinesToFile(path string, lines []string) error {
 	w := bufio.NewWriter(f)
 	for _, l := range lines {
 		if strings.TrimSpace(l) == "" { continue }
-		if _, err := w.WriteString(l + "
-		"); err != nil { return err }
-	}
-	return w.Flush()
-}
-
-// writeLinesRotate renomeia o arquivo existente para <basename>-old.txt (removendo qualquer antigo -old primeiro)
-// e depois cria o novo arquivo com as linhas fornecidas.
-func writeLinesRotate(path string, lines []string) error {
-	// se não existir, apenas criar
-	if _, err := os.Stat(path); err == nil {
-		// arquivo existe
-		// construir nome do arquivo antigo: inserir "-old" antes da extensão, se houver
-		ext := path
-		old := ""
-		if idx := strings.LastIndex(ext, "."); idx != -1 {
-			old = ext[:idx] + "-old" + ext[idx:]
-		} else {
-			old = ext + "-old"
-		}
-
-		// remover old se já existir
-		if _, err := os.Stat(old); err == nil {
-			if err := os.Remove(old); err != nil {
-				return fmt.Errorf("erro removendo %s: %v", old, err)
-			}
-		}
-
-		// renomear
-		if err := os.Rename(path, old); err != nil {
-			return fmt.Errorf("erro renomeando %s -> %s: %v", path, old, err)
-		}
-	}
-
-	// criar novo arquivo e escrever
-	return writeLinesToFile(path, lines)
-}
-	defer f.Close()
-	w := bufio.NewWriter(f)
-	for _, l := range lines {
-		if strings.TrimSpace(l) == "" { continue }
-		if _, err := w.WriteString(l + "
-"); err != nil { return err }
+		if _, err := w.WriteString(l + "\n"); err != nil { return err }
 	}
 	return w.Flush()
 }
@@ -468,94 +426,75 @@ func getScopes(h1User, h1Key, bcToken, intToken, ywhToken string) {
 
 	// HackerOne
 	if h1User != "" && h1Key != "" {
-		fmt.Fprintf(os.Stderr, "[hackerone] buscando handles...
-")
+		fmt.Fprintf(os.Stderr, "[hackerone] buscando handles...\n")
 		handles, err := fetchHackerOneProgramHandles(h1User, h1Key)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "[hackerone] erro: %v
-", err)
+			fmt.Fprintf(os.Stderr, "[hackerone] erro: %v\n", err)
 		} else {
 			// salvar handles
-			if err := writeLinesRotate("hackerone_programs.txt", handles); err != nil { fmt.Fprintf(os.Stderr, "[hackerone] erro salvando handles: %v
-", err) }
-			fmt.Printf("[hackerone] handles: %d
-", len(handles))
+			if err := writeLinesRotate("hackerone_programs.txt", handles); err != nil { fmt.Fprintf(os.Stderr, "[hackerone] erro salvando handles: %v\n", err) }
+			fmt.Printf("[hackerone] handles: %d\n", len(handles))
 			// para cada handle, buscar structured scopes e agregar
 			var allScopes []string
 			for _, h := range handles {
 				scopes, err := fetchHackerOneStructuredScopes(h, h1User, h1Key)
 				if err != nil {
 					// log sucinto
-					fmt.Fprintf(os.Stderr, "[hackerone] %s -> err
-", h)
+					fmt.Fprintf(os.Stderr, "[hackerone] %s -> err\n", h)
 					continue
 				}
 				allScopes = append(allScopes, scopes...)
 			}
-			if err := writeLinesRotate("hackerone_scopes.txt", allScopes); err != nil { fmt.Fprintf(os.Stderr, "[hackerone] erro salvando scopes: %v
-", err) }
-			fmt.Printf("[hackerone] scopes colhidos: %d (arquivo: hackerone_scopes.txt)
-", len(allScopes))
+			if err := writeLinesRotate("hackerone_scopes.txt", allScopes); err != nil { fmt.Fprintf(os.Stderr, "[hackerone] erro salvando scopes: %v\n", err) }
+			fmt.Printf("[hackerone] scopes colhidos: %d (arquivo: hackerone_scopes.txt)\n", len(allScopes))
 			// (opcional) imprimir endpoints usados de forma sucinta
 			_ = h1Endpoint
 			_ = h1Structured
 			_ = h1Auth
 		}
 	}
-
-	// Bugcrowd
-	if bcToken != "" {
-		fmt.Fprintf(os.Stderr, "[bugcrowd] consultando API...
-")
-		s, err := fetchBugcrowdScopes(bcToken)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "[bugcrowd] erro: %v
-", err)
-		} else {
-			if err := writeLinesRotate("bugcrowd_scopes.txt", s); err != nil { fmt.Fprintf(os.Stderr, "[bugcrowd] erro salvando scopes: %v
-", err) }
-			fmt.Printf("[bugcrowd] scopes colhidos: %d (arquivo: bugcrowd_scopes.txt)
-", len(s))
-			_ = bcEndpoint
-			_ = bcAuth
+	
+		// Bugcrowd
+		if bcToken != "" {
+			fmt.Fprintf(os.Stderr, "[bugcrowd] consultando API...\n")
+			s, err := fetchBugcrowdScopes(bcToken)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[bugcrowd] erro: %v\n", err)
+			} else {
+				if err := writeLinesRotate("bugcrowd_scopes.txt", s); err != nil { fmt.Fprintf(os.Stderr, "[bugcrowd] erro salvando scopes: %v\n", err) }
+				fmt.Printf("[bugcrowd] scopes colhidos: %d (arquivo: bugcrowd_scopes.txt)\n", len(s))
+				_ = bcEndpoint
+				_ = bcAuth
+			}
 		}
-	}
-
-	// Intigriti
-	if intToken != "" {
-		fmt.Fprintf(os.Stderr, "[intigriti] consultando API...
-")
-		s, err := fetchIntigritiScopes(intToken)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "[intigriti] erro: %v
-", err)
-		} else {
-			if err := writeLinesRotate("intigriti_scopes.txt", s); err != nil { fmt.Fprintf(os.Stderr, "[intigriti] erro salvando scopes: %v
-", err) }
-			fmt.Printf("[intigriti] scopes colhidos: %d (arquivo: intigriti_scopes.txt)
-", len(s))
-			_ = intEndpoint
-			_ = intAuth
+	
+		// Intigriti
+		if intToken != "" {
+			fmt.Fprintf(os.Stderr, "[intigriti] consultando API...\n")
+			s, err := fetchIntigritiScopes(intToken)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[intigriti] erro: %v\n", err)
+			} else {
+				if err := writeLinesRotate("intigriti_scopes.txt", s); err != nil { fmt.Fprintf(os.Stderr, "[intigriti] erro salvando scopes: %v\n", err) }
+				fmt.Printf("[intigriti] scopes colhidos: %d (arquivo: intigriti_scopes.txt)\n", len(s))
+				_ = intEndpoint
+				_ = intAuth
+			}
 		}
-	}
-
-	// YesWeHack
-	if ywhToken != "" {
-		fmt.Fprintf(os.Stderr, "[yeswehack] consultando API...
-")
-		s, err := fetchYesWeHackScopes(ywhToken)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "[yeswehack] erro: %v
-", err)
-		} else {
-			if err := writeLinesRotate("yeswehack_scopes.txt", s); err != nil { fmt.Fprintf(os.Stderr, "[yeswehack] erro salvando scopes: %v
-", err) }
-			fmt.Printf("[yeswehack] scopes colhidos: %d (arquivo: yeswehack_scopes.txt)
-", len(s))
-			_ = ywhEndpoint
-			_ = ywhAuth
+	
+		// YesWeHack
+		if ywhToken != "" {
+			fmt.Fprintf(os.Stderr, "[yeswehack] consultando API...\n")
+			s, err := fetchYesWeHackScopes(ywhToken)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[yeswehack] erro: %v\n", err)
+			} else {
+				if err := writeLinesRotate("yeswehack_scopes.txt", s); err != nil { fmt.Fprintf(os.Stderr, "[yeswehack] erro salvando scopes: %v\n", err) }
+				fmt.Printf("[yeswehack] scopes colhidos: %d (arquivo: yeswehack_scopes.txt)\n", len(s))
+				_ = ywhEndpoint
+				_ = ywhAuth
+			}
 		}
-	}
 
 	// breve resumo final
 	fmt.Fprintln(os.Stderr, "[getScopes] coleta finalizada")
@@ -702,4 +641,4 @@ func api() {
 	}
 	fout.Close()
 	fmt.Printf("[done] resultados salvos em %s\n", *outFile)
-},,
+}

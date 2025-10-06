@@ -800,7 +800,7 @@ select_db_menu() {
 
 
 
-            4)
+            5)
                 SELECTED_DB="postgresql"
                 log "INFO" "Selecionado: PostgreSQL"
                 install_db "PostgreSQL" "postgresql postgresql-contrib" "postgresql" || {
