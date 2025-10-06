@@ -170,35 +170,75 @@ O `install.sh` é um script Bash projetado para automatizar a instalação de fe
 
 ```txt
 
-INÍCIO
+INÍCIO DA INSTALAÇÃO E CONFIGURAÇÃO
 
-(1) Ponto de Partida e Instalação
+(1) Ponto de Partida: O Instalador
 install.sh 
-  -> Executa o setup de ferramentas (Go, dependências, etc.).
-  -> DIRECIONA o usuário para o próximo passo.
+  -> Verifica Pré-requisitos (Sudo/Root, git, tee) e cria LOG.
+  -> Detecta S.O./Gerenciador de Pacotes (apt, dnf, etc.).
+  -> Exibe Menu de Ferramentas e instala as dependências escolhidas (3 Níveis de Prioridade).
+  -> Exibe Relatório de Resumo.
+  -> DIRECIONA o usuário para: config/db_config.sh
 
-(2) Configuração do Banco de Dados
+(2) Configuração da Persistência (Banco de Dados)
 config/db_config.sh 
   -> **PRIMEIRA CONFIGURAÇÃO DO USUÁRIO.**
-  -> Usuário insere dados de conexão (Host, Usuário, Senha, etc.).
-  -> config/db_config.sh ENVIA DADOS para -> utils/json_loader.go
-  -> utils/json_loader.go SALVA/ATUALIZA em -> json/db_info.json
+  -> Usuário Seleciona o SGBD (MariaDB, PostgreSQL, etc.).
+  -> Instala/Configura o SGBD (Usuário/Senha dedicados).
+  -> Pergunta sobre Serviço Systemd e Política de Retenção.
+  -> config/db_config.sh ENVIA DADOS DE CONEXÃO para -> utils/json_loader.go
+  -> utils/json_loader.go SALVA/ATUALIZA em -> json/db_info.json (Dados de conexão do DB)
+  -> DIRECIONA o usuário para: config/enviroment.sh
 
-(3) Configuração do Ambiente e Caminhos
-config/env_config.sh (NOVO ARQUIVO/ETAPA)
+(3) Configuração do Ambiente e Caminhos (Variáveis de Ambiente)
+config/enviroment.sh 
   -> **SEGUNDA CONFIGURAÇÃO DO USUÁRIO.**
-  -> Usuário define caminhos (paths) de diretórios e scripts (ambiente).
-  -> config/env_config.sh ENVIA DADOS para -> utils/json_loader.go
-  -> utils/json_loader.go SALVA/ATUALIZA em -> json/env.json
+  -> Usuário interage com o Menu (pastas SUJAS, LIMPAS, LOGS, WORDLISTs, etc.).
+  -> config/enviroment.sh ENVIA DADOS (os PAIRS "path" e "archives") para -> utils/json_loader.go
+  -> utils/json_loader.go SALVA/ATUALIZA em -> json/env.json (Paths de diretórios e arquivos)
 
-(4) Configurações Opcionais/Secundárias
-config/env_config.sh OU NOVO SCRIPT (Opcional)
-  -> Pode solicitar e salvar: json/tokens.json e json/selected_platform.json.
-
-FIM DA CONFIGURAÇÃO
+FIM DA CONFIGURAÇÃO DE AMBIENTE
 
 ```
 
+---
+
+### Data flow setup
+
+```
+INÍCIO DA EXECUÇÃO DE TAREFAS
+
+(1) Ponto de Entrada (Orquestrador)
+cmd/maestro.go (Ou qualquer outra ferramenta/Go Script)
+  -> **PRIMEIRA AÇÃO:** Solicita dados de configuração.
+  -> CHAMA -> utils/json_loader.go (solicitando, por exemplo, o path do commands.json ou do DB)
+
+(2) Gerenciamento Centralizado de Configuração
+utils/json_loader.go 
+  -> LÊ os arquivos de configuração (ex: json/env.json, json/db_info.json, json/tokens.json).
+  -> json/env.json: Fornece todos os *paths* de diretórios e arquivos essenciais.
+  -> json/db_info.json: Fornece as credenciais de conexão do DB.
+
+(3) Distribuição de Dados
+utils/json_loader.go 
+  -> RETORNA as configurações (Paths, Credenciais, Tokens) para a Ferramenta Solicitante (ex: cmd/maestro.go).
+
+(4) Execução da Tarefa e Acesso a Dados (Exemplo: Tarefa de DB)
+data/db/db_manager.go 
+  -> CHAMA -> utils/json_loader.go para obter o path do json/db_info.json e as credenciais.
+  -> data/db/db_manager.go conecta e realiza a operação no DB.
+
+(5) Execução da Tarefa e Acesso a Paths (Exemplo: Limpeza)
+data/cleaner/cleaner.go 
+  -> CHAMA -> utils/json_loader.go para obter:
+      - O path do `json/cleaner-templates.json`
+      - Os paths das pastas SUJAS/LIMPAS (via `json/env.json`).
+  -> data/cleaner/cleaner.go executa a limpeza e salva em um path definido no `env.json`.
+
+FIM DO PROCESSO
+```
+
+---
 
 ### Configurações
 - **Cores**: Usa códigos ANSI para mensagens coloridas no terminal.
