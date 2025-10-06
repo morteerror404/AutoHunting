@@ -134,18 +134,30 @@ O `install.sh` é um script Bash projetado para automatizar a instalação de fe
 ## Estrutura do Script
 
 ```txt
-AutoHunting/
+├───install.sh
+├───Readme.md
+│
 ├───config/
-|      ├───db_config.sh
-|      └───Readme.md
-└───Processing with Golang/
-    ├───process_results.go
-    ├───request_api.go
-    ├───runner.go
-    ├───Readme.md
-    └───json/
-         ├───env.json
-         └───token.json
+│   ├───db_config.sh
+│   ├───README.md
+│   ├───request_api.go
+│   │
+│   └───json/
+│       ├───commands.json
+│       ├───env.json
+│       └───tokens.json
+│
+├───data_Manager/
+│    ├───cleaner.go
+│    ├───db_manager.go
+│    ├───process_results.go
+│    ├───Readme.md
+│    └───runner.go
+│
+└───user_run/
+      ├───config_enviroment.sh
+      ├───mestro.go
+      └───show_time.go
 ```
 
 ### Configurações
