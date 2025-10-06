@@ -1,10 +1,10 @@
 # AutoHunting - Roteiro de Implementação (TODO)
 
-Este arquivo serve como um mapa para o desenvolvimento futuro do projeto, listando as tarefas pendentes e melhorias planejadas. Marque os itens com `[x]` conforme forem concluídos.
+Este arquivo serve como um mapa para o desenvolvimento futuro do projeto, listando as tarefas pendentes e melhorias planejadas. Itens marcados com `[x]` foram concluídos.
 
 ## Configuração e Dados Pendentes
 
-- [ ] **Credenciais de API:** Preencher o arquivo `json/tokens.json` com as chaves de API válidas para as plataformas de Bug Bounty (HackerOne, Bugcrowd, etc.).
+- [x] **Credenciais de API:** Preencher o arquivo `json/tokens.json` com as chaves de API válidas para as plataformas de Bug Bounty (HackerOne, Bugcrowd, etc.).
 - [ ] **Conexão com Banco de Dados:** Configurar as informações de conexão (host, usuário, senha) no arquivo `json/db_info.json`.
 - [ ] **Variáveis de Ambiente:** Ajustar os caminhos de diretórios e arquivos no `json/env.json` para corresponder à estrutura do ambiente local.
 - [ ] **Comandos de Ferramentas:** Revisar e personalizar os argumentos de linha de comando para as ferramentas (Nmap, Ffuf) no arquivo `json/commands.json`.
@@ -14,7 +14,7 @@ Este arquivo serve como um mapa para o desenvolvimento futuro do projeto, listan
 - [ ] **Otimização de Performance:** Paralelizar a busca de escopos do HackerOne.
   - *Detalhes:* Atualmente, a busca é sequencial para cada *handle*. Usar goroutines e um `sync.WaitGroup` para buscar múltiplos handles simultaneamente. Garantir que a escrita no slice de resultados seja *thread-safe* (usando um `sync.Mutex`).
 
-- [ ] **Expansão de Funcionalidade:** Implementar a coleta de escopos para as outras plataformas.
+- [ ] **Expansão de Funcionalidade:** Implementar a coleta de escopos real para as outras plataformas (atualmente são placeholders).
   - [ ] Bugcrowd
   - [ ] Intigriti
   - [ ] YesWeHack
@@ -32,7 +32,7 @@ Este arquivo serve como um mapa para o desenvolvimento futuro do projeto, listan
 
 ## Módulo `show_time` (`cmd/show_time.go`)
 
-- [ ] **Refatoração:** Melhorar a função `checkAPIStatus` para evitar repetição de código.
+- [x] **Refatoração:** Melhorar a função `checkAPIStatus` para evitar repetição de código.
   - *Detalhes:* Criar uma função auxiliar `testEndpoint(platformName, url)` que centralize a lógica de fazer a requisição GET e verificar o status code.
 
 ## Módulo de Banco de Dados (`data/db/db_manager.go`)
