@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
-	"data_Manager/db_manager_main"
-	"data_Manager/utils"
+	"github.com/usuario/bug-hunt/data/db"
+	"github.com/usuario/bug-hunt/utils"
 )
 
 type Metrics struct {
@@ -182,7 +183,7 @@ func selectPlatform(tokens Tokens) (string, error) {
 
 // showScopes consulta e exibe os escopos disponíveis para uma plataforma
 func showScopes(platform string) error {
-	db, err := db_manager_main.connectDB()
+	db, err := db.ConnectDB()
 	if err != nil {
 		return fmt.Errorf("erro ao conectar ao banco de dados: %w", err)
 	}
