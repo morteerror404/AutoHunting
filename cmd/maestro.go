@@ -1,17 +1,18 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"data_Manager/cleaner_main"
-	"data_Manager/db_manager_main"
-	"data_Manager/runner"
-	"config/request_api_main"
-	"utils"
+	"github.com/usuario/bug-hunt/api"
+	"github.com/usuario/bug-hunt/data/cleaner"
+	"github.com/usuario/bug-hunt/data/db"
+	"github.com/usuario/bug-hunt/data/runner"
+	"github.com/usuario/bug-hunt/utils"
 )
 
 type Config struct {
@@ -25,73 +26,154 @@ type Commands struct {
 	Ffuf map[string]string `json:"ffuf"`
 }
 
+type Tokens struct {
+	HackerOne struct {
+		Username string `json:"username"`
+		ApiKey   string `json:"api_key"`
+	} `json:"hackerone"`
+	Bugcrowd struct {
+		Token string `json:"token"`
+	} `json:"bugcrowd"`
+	Intigriti struct {
+		Token string `json:"token"`
+	} `json:"intigriti"`
+	YesWeHack struct {
+		Token string `json:"token"`
+	} `json:"yeswehack"`
+}
+
+type ExecutionLog struct {
+	Timestamp time.Time
+	Step      string
+	Status    string
+	Error     string
+}
+
 func main() {
-	// 1. Carregar configurações
+	start := time.Now()
+	logs := []ExecutionLog{}
+
+	// Carregar configurações
 	config, err := loadConfig()
 	if err != nil {
+		logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: "LoadConfig", Status: "Failed", Error: err.Error()})
+		saveExecutionLog(logs)
 		fmt.Printf("Erro ao carregar env.json: %v\n", err)
 		os.Exit(1)
 	}
+	logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: "LoadConfig", Status: "Success"})
 
+	// Carregar comandos
 	commands, err := loadCommands()
 	if err != nil {
+		logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: "LoadCommands", Status: "Failed", Error: err.Error()})
+		saveExecutionLog(logs)
 		fmt.Printf("Erro ao carregar commands.json: %v\n", err)
 		os.Exit(1)
 	}
+	logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: "LoadCommands", Status: "Success"})
 
-	// 2. Executar request_api para coletar alvos
+	// Carregar tokens
+	tokens, err := loadTokens()
+	if err != nil {
+		logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: "LoadTokens", Status: "Failed", Error: err.Error()})
+		saveExecutionLog(logs)
+		fmt.Printf("Erro ao carregar tokens.json: %v\n", err)
+		os.Exit(1)
+	}
+	logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: "LoadTokens", Status: "Success"})
+
+	// Receber plataforma de show_time.go (ex.: via arquivo selected_platform.json)
+	platform, err := loadSelectedPlatform()
+	if err != nil {
+		logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: "LoadSelectedPlatform", Status: "Failed", Error: err.Error()})
+		saveExecutionLog(logs)
+		fmt.Printf("Erro ao carregar plataforma selecionada: %v\n", err)
+		os.Exit(1)
+	}
+	logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: "LoadSelectedPlatform", Status: "Success"})
+
+	// Executar request_api para coletar alvos
 	fmt.Println("Coletando alvos via APIs de bug bounty...")
-	if err := runRequestAPI(config.APIRawResultsPath); err != nil {
+	if err := runRequestAPI(config.APIRawResultsPath, platform, tokens); err != nil {
+		logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: "RequestAPI", Status: "Failed", Error: err.Error()})
+		saveExecutionLog(logs)
 		fmt.Printf("Erro ao executar request_api: %v\n", err)
 		os.Exit(1)
 	}
+	logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: "RequestAPI", Status: "Success"})
 
-	// 3. Executar runner para varredura
-	fmt.Println("Executando varreduras com nmap...")
-	nmapArgs := commands.Nmap["nmap_slow"]
-	targetsFile := config.APIRawResultsPath
+	// Executar runner para varreduras (nmap e ffuf)
+	fmt.Println("Executando varreduras...")
 	outDir := "output"
-	if err := runRunner(targetsFile, nmapArgs, outDir); err != nil {
-		fmt.Printf("Erro ao executar runner: %v\n", err)
-		os.Exit(1)
+	for tool, args := range map[string]string{
+		"nmap": commands.Nmap["nmap_slow"],
+		"ffuf": commands.Ffuf["default"],
+	} {
+		if err := runRunner(config.APIRawResultsPath, args, outDir, tool); err != nil {
+			logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: fmt.Sprintf("Runner_%s", tool), Status: "Failed", Error: err.Error()})
+			fmt.Printf("Erro ao executar runner para %s: %v\n", tool, err)
+			continue
+		}
+		logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: fmt.Sprintf("Runner_%s", tool), Status: "Success"})
 	}
 
-	// 4. Executar cleaner para processar resultados
+	// Executar cleaner para processar resultados
 	fmt.Println("Limpando resultados...")
 	files, err := os.ReadDir(outDir)
 	if err != nil {
+		logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: "ReadOutputDir", Status: "Failed", Error: err.Error()})
+		saveExecutionLog(logs)
 		fmt.Printf("Erro ao ler diretório de saída: %v\n", err)
 		os.Exit(1)
 	}
+	logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: "ReadOutputDir", Status: "Success"})
+
 	for _, f := range files {
-		if f.IsDir() || !strings.HasPrefix(f.Name(), "nmap_") {
+		if f.IsDir() || (!strings.HasPrefix(f.Name(), "nmap_") && !strings.HasPrefix(f.Name(), "ffuf_")) {
 			continue
 		}
 		filename := filepath.Join(outDir, f.Name())
-		if err := cleaner_main.cleanFile(filename, "open_ports"); err != nil {
-			fmt.Printf("Erro ao limpar arquivo %s: %v\n", filename, err)
+		template := "open_ports"
+		if strings.HasPrefix(f.Name(), "ffuf_") {
+			template = "endpoints"
 		}
+		if err := cleaner.CleanFile(filename, template); err != nil {
+			logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: fmt.Sprintf("CleanFile_%s", f.Name()), Status: "Failed", Error: err.Error()})
+			fmt.Printf("Erro ao limpar arquivo %s: %v\n", filename, err)
+			continue
+		}
+		logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: fmt.Sprintf("CleanFile_%s", f.Name()), Status: "Success"})
 	}
 
-	// 5. Executar db_manager para inserir no banco
+	// Executar db_manager para inserir no banco
 	fmt.Println("Inserindo resultados no banco de dados...")
+	db, err := db.ConnectDB()
+	if err != nil {
+		logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: "ConnectDB", Status: "Failed", Error: err.Error()})
+		saveExecutionLog(logs)
+		fmt.Printf("Erro ao conectar ao DB: %v\n", err)
+		os.Exit(1)
+	}
+	defer db.Close()
+	logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: "ConnectDB", Status: "Success"})
+
 	for _, f := range files {
 		if f.IsDir() || !strings.Contains(f.Name(), "_clean_") {
 			continue
 		}
 		filename := filepath.Join(outDir, f.Name())
-		db, err := db_manager_main.connectDB()
-		if err != nil {
-			fmt.Printf("Erro ao conectar ao DB: %v\n", err)
-			os.Exit(1)
-		}
-		defer db.Close()
-		if err := db_manager_main.processCleanFile(filename, db); err != nil {
+		if err := db.ProcessCleanFile(filename, db); err != nil {
+			logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: fmt.Sprintf("ProcessCleanFile_%s", f.Name()), Status: "Failed", Error: err.Error()})
 			fmt.Printf("Erro ao processar arquivo limpo %s: %v\n", filename, err)
+			continue
 		}
+		logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: fmt.Sprintf("ProcessCleanFile_%s", f.Name()), Status: "Success"})
 	}
 
-	fmt.Println("Processamento concluído!")
+	logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: "ExecutionCompleted", Status: "Success"})
+	saveExecutionLog(logs)
+	fmt.Printf("Processamento concluído em %v!\n", time.Since(start))
 }
 
 // loadConfig carrega o arquivo env.json
@@ -112,14 +194,94 @@ func loadCommands() (Commands, error) {
 	return commands, nil
 }
 
+// loadTokens carrega o arquivo tokens.json
+func loadTokens() (Tokens, error) {
+	var tokens Tokens
+	if err := utils.LoadJSON("tokens.json", &tokens); err != nil {
+		return tokens, err
+	}
+	return tokens, nil
+}
+
+// loadSelectedPlatform carrega a plataforma selecionada (ex.: de show_time.go)
+func loadSelectedPlatform() (string, error) {
+	var selection struct {
+		Platform string `json:"platform"`
+	}
+	if err := utils.LoadJSON("selected_platform.json", &selection); err != nil {
+		return "", fmt.Errorf("erro ao carregar selected_platform.json: %w", err)
+	}
+	return selection.Platform, nil
+}
+
 // runRequestAPI executa a coleta de alvos via request_api
-func runRequestAPI(outFile string) error {
-	fmt.Printf("Executando request_api, salvando em %s\n", outFile)
-	return nil // Substitua por chamada real se necessário
+func runRequestAPI(outFile, platform string, tokens Tokens) error {
+	fmt.Printf("Executando request_api para plataforma %s, salvando em %s\n", platform, outFile)
+	args := []string{"-out", outFile}
+	if platform != "" {
+		switch platform {
+		case "hackerone":
+			if tokens.HackerOne.ApiKey != "" {
+				args = append(args, "-h1-user", tokens.HackerOne.Username, "-h1-key", tokens.HackerOne.ApiKey)
+			}
+		case "bugcrowd":
+			if tokens.Bugcrowd.Token != "" {
+				args = append(args, "-bc-token", tokens.Bugcrowd.Token)
+			}
+		case "intigriti":
+			if tokens.Intigriti.Token != "" {
+				args = append(args, "-int-token", tokens.Intigriti.Token)
+			}
+		case "yeswehack":
+			if tokens.YesWeHack.Token != "" {
+				args = append(args, "-ywh-token", tokens.YesWeHack.Token)
+			}
+		}
+	} else {
+		// Adicionar todas as plataformas se nenhuma for especificada
+		if tokens.HackerOne.ApiKey != "" {
+			args = append(args, "-h1-user", tokens.HackerOne.Username, "-h1-key", tokens.HackerOne.ApiKey)
+		}
+		if tokens.Bugcrowd.Token != "" {
+			args = append(args, "-bc-token", tokens.Bugcrowd.Token)
+		}
+		if tokens.Intigriti.Token != "" {
+			args = append(args, "-int-token", tokens.Intigriti.Token)
+		}
+		if tokens.YesWeHack.Token != "" {
+			args = append(args, "-ywh-token", tokens.YesWeHack.Token)
+		}
+	}
+	os.Args = append([]string{"request_api"}, args...)
+	api.Main()
+	return nil
 }
 
 // runRunner executa varreduras com runner
-func runRunner(targetsFile, nmapArgs, outDir string) error {
-	fmt.Printf("Executando runner com alvos de %s e args %s\n", targetsFile, nmapArgs)
-	return nil // Substitua por chamada real se necessário
+func runRunner(targetsFile, args, outDir, tool string) error {
+	fmt.Printf("Executando runner com alvos de %s, args %s, ferramenta %s, saída em %s\n", targetsFile, args, tool, outDir)
+	return runner.Run(targetsFile, args, outDir)
+}
+
+// saveExecutionLog salva o log de execução em maestro_execution.log
+func saveExecutionLog(logs []ExecutionLog) {
+	f, err := os.OpenFile("maestro_execution.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Printf("Erro ao abrir maestro_execution.log: %v\n", err)
+		return
+	}
+	defer f.Close()
+
+	writer := bufio.NewWriter(f)
+	for _, log := range logs {
+		line := fmt.Sprintf("[%s] Step: %s, Status: %s", log.Timestamp.Format(time.RFC3339), log.Step, log.Status)
+		if log.Error != "" {
+			line += fmt.Sprintf(", Error: %s", log.Error)
+		}
+		line += "\n"
+		if _, err := writer.WriteString(line); err != nil {
+			fmt.Printf("Erro ao escrever no log: %v\n", err)
+		}
+	}
+	writer.Flush()
 }
