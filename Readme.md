@@ -1,11 +1,20 @@
 # AutoHunting - README
 
+## Descrição
+
+**AutoHunting** é um framework de automação para bug bounty e pentesting, projetado para orquestrar um fluxo de trabalho de reconhecimento e varredura. Ele automatiza a coleta de escopos de plataformas de bug bounty, executa ferramentas de segurança como Nmap e Ffuf, limpa os resultados e os armazena em um banco de dados para análise.
+
+O projeto é controlado por uma interface de linha de comando (CLI) interativa e é altamente configurável através de arquivos JSON, permitindo que os usuários personalizem comandos, ferramentas e fluxos de trabalho.
+
+## Arquitetura e Fluxo de Trabalho
+
+O diagrama abaixo ilustra o fluxo de execução principal do AutoHunting, desde a interação do usuário até o armazenamento dos resultados.
+
 ```mermaid
 ---
 config:
   theme: dark
 ---
-
 flowchart TD
 
   %% ==========================================================
