@@ -166,6 +166,40 @@ O `install.sh` é um script Bash projetado para automatizar a instalação de fe
     json_loader.go
 ```
 
+### Data flow setup
+
+```txt
+
+INÍCIO
+
+(1) Ponto de Partida e Instalação
+install.sh 
+  -> Executa o setup de ferramentas (Go, dependências, etc.).
+  -> DIRECIONA o usuário para o próximo passo.
+
+(2) Configuração do Banco de Dados
+config/db_config.sh 
+  -> **PRIMEIRA CONFIGURAÇÃO DO USUÁRIO.**
+  -> Usuário insere dados de conexão (Host, Usuário, Senha, etc.).
+  -> config/db_config.sh ENVIA DADOS para -> utils/json_loader.go
+  -> utils/json_loader.go SALVA/ATUALIZA em -> json/db_info.json
+
+(3) Configuração do Ambiente e Caminhos
+config/env_config.sh (NOVO ARQUIVO/ETAPA)
+  -> **SEGUNDA CONFIGURAÇÃO DO USUÁRIO.**
+  -> Usuário define caminhos (paths) de diretórios e scripts (ambiente).
+  -> config/env_config.sh ENVIA DADOS para -> utils/json_loader.go
+  -> utils/json_loader.go SALVA/ATUALIZA em -> json/env.json
+
+(4) Configurações Opcionais/Secundárias
+config/env_config.sh OU NOVO SCRIPT (Opcional)
+  -> Pode solicitar e salvar: json/tokens.json e json/selected_platform.json.
+
+FIM DA CONFIGURAÇÃO
+
+```
+
+
 ### Configurações
 - **Cores**: Usa códigos ANSI para mensagens coloridas no terminal.
 - **Variáveis**:
