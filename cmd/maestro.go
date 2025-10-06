@@ -251,9 +251,18 @@ func runRequestAPI(outFile, platform string, tokens Tokens) error {
 			args = append(args, "-ywh-token", tokens.YesWeHack.Token)
 		}
 	}
-	os.Args = append([]string{"request_api"}, args...)
-	api.Main()
-	return nil
+package api
+
+func Main(args []string) error {
+	// Sua lógica aqui
+	if err != nil {
+		return err // Retorna o erro
+	}
+	return nil // Retorna nil se tudo correr bem
+}
+	if err := api.Main(args); err != nil {
+		return fmt.Errorf("erro ao executar api.Main: %w", err)
+	}
 }
 
 // runRunner executa varreduras com runner

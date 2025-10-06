@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,17 +16,20 @@ import (
 	"utils"
 )
 
+// Metrics armazena métricas da execução
 type Metrics struct {
 	TotalFilesProcessed int
 	TotalErrors         int
 	TotalTime           time.Duration
+	LogFile             string
 }
 
 type Config struct {
-	APIRawResultsPath    string `json:"api_raw_results_path"`
+	APIRawResultsPath     string `json:"api_raw_results_path"`
 	AIProcessedScopesPath string `json:"ai_processed_scopes_path"`
-	WordlistDir          string `json:"wordlist_dir"`
+	WordlistDir           string `json:"wordlist_dir"`
 }
+
 
 type Tokens struct {
 	HackerOne struct {
@@ -45,13 +50,20 @@ type Tokens struct {
 func main() {
 	start := time.Now()
 	metrics := Metrics{}
-
 	// Carregar configurações
 	config, err := loadConfig()
 	if err != nil {
 		fmt.Printf("Erro ao carregar env.json: %v\n", err)
 		os.Exit(1)
 	}
+	// Configurar o arquivo de log
+	logFile := filepath.Join(config.APIRawResultsPath, "show_time.log")
+	f, err := os.OpenFile(logFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	if err != nil {
+		fmt.Printf("Erro ao abrir arquivo de log: %v\n", err)
+		os.Exit(1)
+	}
+
 
 	// Carregar tokens
 	tokens, err := loadTokens()
@@ -60,8 +72,14 @@ func main() {
 		os.Exit(1)
 	}
 
+		// Definir flags para o logger
+		log.SetOutput(f)
+		log.SetFlags(log.LstdFlags | log.Lshortfile)
+
+	defer f.Close()
+	metrics.LogFile = logFile
+
 	// Monitorar diretório de saída (output)
-	outputDir := "output"
 	metrics, err = monitorDirectory(outputDir, metrics)
 	if err != nil {
 		fmt.Printf("Erro ao monitorar diretório %s: %v\n", outputDir, err)
@@ -118,6 +136,7 @@ func loadTokens() (Tokens, error) {
 
 // monitorDirectory analisa arquivos em um diretório e atualiza métricas
 func monitorDirectory(dir string, metrics Metrics) (Metrics, error) {
+
 	files, err := os.ReadDir(dir)
 	if err != nil {
 		metrics.TotalErrors++
@@ -126,13 +145,17 @@ func monitorDirectory(dir string, metrics Metrics) (Metrics, error) {
 
 	for _, f := range files {
 		if f.IsDir() {
+
 			continue
 		}
 		metrics.TotalFilesProcessed++
 		filePath := filepath.Join(dir, f.Name())
+
 		data, err := os.ReadFile(filePath)
 		if err != nil {
+
 			metrics.TotalErrors++
+
 			continue
 		}
 		if strings.Contains(string(data), "error") || strings.Contains(string(data), "Erro") {
@@ -152,7 +175,7 @@ func selectPlatform(tokens Tokens) (string, error) {
 	if tokens.Bugcrowd.Token != "" {
 		platforms = append(platforms, "bugcrowd")
 	}
-	if tokens.Intigriti.Token != "" {
+
 		platforms = append(platforms, "intigriti")
 	}
 	if tokens.YesWeHack.Token != "" {
@@ -187,6 +210,54 @@ func selectPlatform(tokens Tokens) (string, error) {
 	return platforms[choice-1], nil
 }
 
+// checkAPIStatus testa a conexão com a API de uma plataforma
+func checkAPIStatus(platform string) error {
+	switch platform {
+	case "hackerone":
+		fmt.Println("Testando a conexão com a API do HackerOne...")
+		url := "https://api.hackerone.com/reports" // Use um endpoint público e leve
+		resp, err := http.Get(url)
+		if err != nil {
+			return fmt.Errorf("erro ao conectar à API do HackerOne: %w", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("API do HackerOne retornou status code: %d", resp.StatusCode)
+		}
+		return nil
+	case "bugcrowd":
+		fmt.Println("Testando a conexão com a API do Bugcrowd...")
+		url := "https://api.bugcrowd.com/programs" // Endpoint público
+		resp, err := http.Get(url)
+		if err != nil {
+			return fmt.Errorf("erro ao conectar à API do Bugcrowd: %w", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("API do Bugcrowd retornou status code: %d", resp.StatusCode)
+		}
+		return nil
+
+	case "intigriti":
+		fmt.Println("Testando a conexão com a API do Intigriti...")
+		url := "https://api.intigriti.com/core/v1/programs" // Endpoint público
+		resp, err := http.Get(url)
+		if err != nil {
+			return fmt.Errorf("erro ao conectar à API do Intigriti: %w", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("API do Intigriti retornou status code: %d", resp.StatusCode)
+		}
+		return nil
+	case "yeswehack":
+		fmt.Println("Testando a conexão com a API do YesWeHack...")
+		url := "https://api.yeswehack.com/api/v1/programs"
+
+		return nil
+
+	}
+	return fmt.Errorf("plataforma %s não suportada", platform)
 // saveSelectedPlatform salva a plataforma selecionada em json/selected_platform.json
 func saveSelectedPlatform(platform string) error {
 	selection := struct {
