@@ -38,8 +38,8 @@ type Ports struct {
 }
 
 type Port struct {
-	Protocol string   `xml:"protocol,attr"`
-	PortId   int      `xml:"portid,attr"`
+	Protocol string    `xml:"protocol,attr"`
+	PortId   int       `xml:"portid,attr"`
 	State    PortState `xml:"state"`
 	Service  Service   `xml:"service"`
 }
@@ -55,7 +55,7 @@ type Service struct {
 }
 
 // Run executa varreduras com a ferramenta especificada (nmap ou ffuf)
-func Run(targetsFile, args, outDir string) error {
+func Run(targetsFile, args, outDir, tool string) error {
 	// Ler alvos do arquivo
 	data, err := os.ReadFile(targetsFile)
 	if err != nil {
@@ -75,12 +75,6 @@ func Run(targetsFile, args, outDir string) error {
 	tasks := make(chan string, len(targets))
 	results := make(chan string, len(targets))
 	var wg sync.WaitGroup
-
-	// Determinar ferramenta com base nos argumentos
-	tool := "nmap"
-	if strings.Contains(args, "ffuf") {
-		tool = "ffuf"
-	}
 
 	// Worker function
 	worker := func(id int) {

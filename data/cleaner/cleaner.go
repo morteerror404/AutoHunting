@@ -1,4 +1,4 @@
-package data_manager
+package cleaner
 
 import (
 	"bufio"
@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"AutoHunting/utils"
 )
 
 // Estruturas (As mesmas do exemplo anterior)
@@ -21,8 +23,11 @@ type Templates struct {
 
 // O resto da sua estrutura de structs e lógica para cleanFile ...
 
-func cleanFile(filename string, templateName string) error {
-	// ... (Código para ler templates.json e selecionar selectedTemplate - SEM ALTERAÇÃO AQUI) ...
+func CleanFile(filename string, templateName string) error {
+	var templates Templates
+	if err := utils.LoadJSON("cleaner-templates.json", &templates); err != nil {
+		return fmt.Errorf("erro ao carregar cleaner-templates.json: %w", err)
+	}
 
 	// --- LÓGICA DE LIMPEZA (TRECHO CHAVE) ---
 

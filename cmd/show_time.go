@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"bufio"
 	"encoding/json"
 	"fmt"
@@ -15,24 +14,9 @@ import (
 	"sync"
 	"time"
 
-	"data/db"
-	"utils"
+	"AutoHunting/data/db"
+	"AutoHunting/utils"
 )
-
-// Metrics armazena métricas da execução
-type Metrics struct {
-	TotalFilesProcessed int
-	TotalErrors         int
-	TotalTime           time.Duration
-	LogFile             string
-}
-
-type Config struct {
-	APIRawResultsPath     string `json:"api_raw_results_path"`
-	AIProcessedScopesPath string `json:"ai_processed_scopes_path"`
-	WordlistDir           string `json:"wordlist_dir"`
-}
-
 
 type Tokens struct {
 	HackerOne struct {
@@ -51,22 +35,9 @@ type Tokens struct {
 }
 
 func main() {
-	start := time.Now()
-	metrics := Metrics{}
-	// Carregar configurações
-	config, err := loadConfig()
-	if err != nil {
-		fmt.Printf("Erro ao carregar env.json: %v\n", err)
-		os.Exit(1)
 	for {
 		showMainMenu()
 	}
-	// Configurar o arquivo de log
-	logFile := filepath.Join(config.APIRawResultsPath, "show_time.log")
-	f, err := os.OpenFile(logFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
-	if err != nil {
-		fmt.Printf("Erro ao abrir arquivo de log: %v\n", err)
-		os.Exit(1)
 }
 
 func showMainMenu() {
@@ -101,24 +72,12 @@ func showMainMenu() {
 func handleHuntMenu() {
 	tokens, err := loadTokens()
 	if err != nil {
-		fmt.Printf("Erro ao carregar tokens.json: %v\n", err)
-		os.Exit(1)
 		fmt.Printf("Erro ao carregar tokens: %v\n", err)
 		return
 	}
 
-		// Definir flags para o logger
-		log.SetOutput(f)
-		log.SetFlags(log.LstdFlags | log.Lshortfile)
-
-	defer f.Close()
-	metrics.LogFile = logFile
-
-	// Monitorar diretório de saída (output)
-	metrics, err = monitorDirectory(outputDir, metrics)
 	platform, err := selectPlatform(tokens)
 	if err != nil {
-		fmt.Printf("Erro ao monitorar diretório %s: %v\n", outputDir, err)
 		fmt.Printf("Erro: %v\n", err)
 		return
 	}
@@ -126,29 +85,8 @@ func handleHuntMenu() {
 		return // Usuário cancelou
 	}
 
-	// Monitorar diretório de resultados da API
-	apiDir := filepath.Dir(config.APIRawResultsPath)
-	metrics, err = monitorDirectory(apiDir, metrics)
-	if err != nil {
-		fmt.Printf("Erro ao monitorar diretório %s: %v\n", apiDir, err)
-	// Salva a plataforma para o maestro usar
-	if err := saveSelectedPlatform(platform); err != nil {
-		fmt.Printf("Erro ao salvar plataforma: %v\n", err)
-		return
-	}
-
-	// Exibir menu para selecionar plataforma e mostrar escopos
-	platform, err := selectPlatform(tokens)
-	if err != nil {
-		fmt.Printf("Erro ao selecionar plataforma: %v\n", err)
-		metrics.TotalErrors++
-	} else if platform != "" {
-		// Salvar plataforma selecionada
-		if err := saveSelectedPlatform(platform); err != nil {
-			fmt.Printf("Erro ao salvar plataforma selecionada: %v\n", err)
-			metrics.TotalErrors++
 	// Cria a ordem e dispara o maestro
-	task := "runFullHunt"
+	task := "fullHunt" // Deve corresponder à chave em order-templates.json
 	if err := utils.CreateExecutionOrder(task, platform); err != nil {
 		fmt.Printf("Erro ao criar ordem de execução para o maestro: %v\n", err)
 		return
@@ -171,39 +109,28 @@ func handleDBMenu() {
 			if err := showScopes(platform); err != nil {
 				fmt.Printf("Erro ao buscar escopos: %v\n", err)
 			}
-		}
-		if err := showScopes(platform); err != nil {
-			fmt.Printf("Erro ao exibir escopos: %v\n", err)
-			metrics.TotalErrors++
 	}
 }
 
 func handleAPIStatusMenu() {
-	tokens, _ := loadTokens()
-	platform, _ := selectPlatform(tokens)
+	tokens, err := loadTokens()
+	if err != nil {
+		fmt.Printf("Erro ao carregar tokens: %v\n", err)
+		return
+	}
+	platform, err := selectPlatform(tokens)
+	if err != nil {
+		fmt.Printf("Erro ao selecionar plataforma: %v\n", err)
+		return
+	}
 	if platform != "" {
 		fmt.Println("Verificando status...")
-		if err := checkAPIStatus(platform); err != nil {
+		if err = checkAPIStatus(platform); err != nil {
 			fmt.Printf("Erro ao verificar API: %v\n", err)
 		} else {
-			fmt.Println("API parece estar respondendo corretamente.")
+			fmt.Printf("API da plataforma '%s' parece estar respondendo corretamente.\n", platform)
 		}
 	}
-
-	// Exibir resumo
-	fmt.Println("\n=== Resumo de Execução ===")
-	fmt.Printf("Arquivos processados: %d\n", metrics.TotalFilesProcessed)
-	fmt.Printf("Erros encontrados: %d\n", metrics.TotalErrors)
-	fmt.Printf("Tempo total: %v\n", time.Since(start))
-}
-
-// loadConfig carrega o arquivo env.json
-func loadConfig() (Config, error) {
-	var config Config
-	if err := utils.LoadJSON("env.json", &config); err != nil {
-		return config, err
-	}
-	return config, nil
 }
 
 // loadTokens carrega o arquivo tokens.json
@@ -213,38 +140,6 @@ func loadTokens() (Tokens, error) {
 		return tokens, err
 	}
 	return tokens, nil
-}
-
-// monitorDirectory analisa arquivos em um diretório e atualiza métricas
-func monitorDirectory(dir string, metrics Metrics) (Metrics, error) {
-
-	files, err := os.ReadDir(dir)
-	if err != nil {
-		metrics.TotalErrors++
-		return metrics, err
-	}
-
-	for _, f := range files {
-		if f.IsDir() {
-
-			continue
-		}
-		metrics.TotalFilesProcessed++
-		filePath := filepath.Join(dir, f.Name())
-
-		data, err := os.ReadFile(filePath)
-		if err != nil {
-
-			metrics.TotalErrors++
-
-			continue
-		}
-		if strings.Contains(string(data), "error") || strings.Contains(string(data), "Erro") {
-			metrics.TotalErrors++
-		}
-	}
-
-	return metrics, nil
 }
 
 // selectPlatform exibe um menu interativo para selecionar a plataforma
@@ -335,25 +230,19 @@ func checkAPIStatus(platform string) error {
 	case "yeswehack":
 		fmt.Println("Testando a conexão com a API do YesWeHack...")
 		url := "https://api.yeswehack.com/api/v1/programs"
+		resp, err := http.Get(url)
+		if err != nil {
+			return fmt.Errorf("erro ao conectar à API do YesWeHack: %w", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("API do YesWeHack retornou status code: %d", resp.StatusCode)
+		}
 
 		return nil
 
 	}
 	return fmt.Errorf("plataforma %s não suportada", platform)
-// saveSelectedPlatform salva a plataforma selecionada em json/selected_platform.json
-func saveSelectedPlatform(platform string) error {
-	// Esta função agora é chamada apenas quando uma caçada é iniciada
-	selection := struct {
-		Platform string `json:"platform"`
-	}{Platform: platform}
-	data, err := json.MarshalIndent(selection, "", "  ")
-	if err != nil {
-		return fmt.Errorf("erro ao serializar plataforma selecionada: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join("json", "selected_platform.json"), data, 0644); err != nil {
-		return fmt.Errorf("erro ao salvar selected_platform.json: %w", err)
-	}
-	return nil
 }
 
 // showScopes consulta e exibe os escopos disponíveis para uma plataforma
@@ -399,9 +288,8 @@ func showScopes(platform string) error {
 func triggerMaestro() {
 	// 1. Executar o maestro em um novo processo
 	fmt.Println("\n[+] Disparando o maestro... Acompanhe o progresso abaixo.")
-	cmd := exec.Command("go", "run", "cmd/maestro.go")
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
+	cmd := exec.Command("go", "run", "./cmd/maestro")
+	cmd.Stderr = os.Stderr // Redireciona o Stderr do maestro para o Stderr do show_time
 
 	// 2. Iniciar o monitoramento do log em uma goroutine
 	var wg sync.WaitGroup
@@ -410,7 +298,18 @@ func triggerMaestro() {
 
 	go func() {
 		defer wg.Done()
-		tailLogFile("maestro_execution.log", done)
+		// Carrega env.json para encontrar o caminho do log
+		var envConfig struct {
+			Archives struct {
+				LogDir string `json:"log_dir"`
+			} `json:"archives"`
+		}
+		if err := utils.LoadJSON("env.json", &envConfig); err != nil {
+			fmt.Printf("\n[ERROR] Não foi possível encontrar o diretório de log do maestro: %v\n", err)
+			return
+		}
+		logPath := filepath.Join(envConfig.Archives.LogDir, "maestro_execution.log")
+		tailLogFile(logPath, done)
 	}()
 
 	// Inicia o comando e espera ele terminar
@@ -425,8 +324,7 @@ func triggerMaestro() {
 	wg.Wait()   // Espera a goroutine de tail terminar
 
 	if err != nil {
-		fmt.Printf("\n[-] Maestro finalizou com erro: %v\n", err)
-		fmt.Printf("Stderr: %s\n", stderr.String())
+		fmt.Printf("\n[-] Maestro finalizou com erro.\n")
 	} else {
 		fmt.Println("\n[+] Maestro concluiu a execução com sucesso.")
 	}

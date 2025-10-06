@@ -7,7 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"utils"
+	
+	"AutoHunting/utils"
 )
 
 // DBConfig estrutura para as configurações do banco
