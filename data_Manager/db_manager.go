@@ -1,4 +1,4 @@
-package main
+package db_manager_main
 
 import (
 	"bufio"
@@ -113,7 +113,7 @@ func processCleanFile(filename string, db *sql.DB) error {
 	return nil
 }
 
-func main() {
+func db_manager_main() {
 	// 1. Conectar ao Banco de Dados
 	db, err := connectDB()
 	if err != nil {

@@ -1,0 +1,9 @@
+{
+    "nmap":{
+        "nmap_slow":"-vvv -sT -sV -sS",
+        "nmap_steath": "-sF -Pn --scan-delay 1000ms -f --mtu 24 -D RND:5,ME -p 80,443"
+    },
+    "ffuf":{
+        "ffuf_common": " -http2 -recursion -recursion-depth 3 -fc 404 -fs 5481 -fw 1,627"
+    }
+}
