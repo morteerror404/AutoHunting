@@ -1,5 +1,8 @@
 {
-    "db_type":"",
-    "ip":"",
-    "port":""
+    "host": "localhost",
+    "port": 5432,
+    "user": "postgres",
+    "password": "minha_senha",
+    "dbname": "bug_hunt_db",
+    "path": "data.db"
 }
