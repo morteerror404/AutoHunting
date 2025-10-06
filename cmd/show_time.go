@@ -2,9 +2,8 @@ package main
 
 import (
 	"bufio"
-	"encoding/json"
+	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -15,6 +14,7 @@ import (
 	"time"
 
 	"github.com/morteerror404/AutoHunting/data/db"
+	"github.com/morteerror404/AutoHunting/tail" // Usando uma biblioteca de tail robusta
 	"github.com/morteerror404/AutoHunting/utils"
 )
 
@@ -67,8 +67,7 @@ func showMainMenu() {
 	}
 }
 
-
-	// Carregar tokens
+// Carregar tokens
 func handleHuntMenu() {
 	tokens, err := loadTokens()
 	if err != nil {
@@ -119,6 +118,7 @@ func handleDBMenu() {
 			if err := showScopes(platform); err != nil {
 				fmt.Printf("Erro ao buscar escopos: %v\n", err)
 			}
+		}
 	}
 }
 
@@ -298,16 +298,20 @@ func showScopes(platform string) error {
 func triggerMaestro() {
 	// 1. Executar o maestro em um novo processo
 	fmt.Println("\n[+] Disparando o maestro... Acompanhe o progresso abaixo.")
-	cmd := exec.Command("go", "run", "./cmd/maestro")
-	cmd.Stderr = os.Stderr // Redireciona o Stderr do maestro para o Stderr do show_time
+	// É mais eficiente executar o binário compilado do que usar 'go run'
+	cmd := exec.Command("./bin/maestro") // Assumindo que o binário está em ./bin/maestro
+	cmd.Stderr = os.Stderr               // Redireciona o Stderr do maestro para o Stderr do show_time
 
 	// 2. Iniciar o monitoramento do log em uma goroutine
 	var wg sync.WaitGroup
 	wg.Add(1)
-	done := make(chan bool)
+	// Usar context para cancelamento é mais idiomático em Go
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel() // Garante que o cancelamento seja chamado no final
 
 	go func() {
 		defer wg.Done()
+		time.Sleep(500 * time.Millisecond) // Pequena espera para o maestro criar o arquivo de log
 		// Carrega env.json para encontrar o caminho do log
 		var envConfig struct {
 			Archives struct {
@@ -319,19 +323,18 @@ func triggerMaestro() {
 			return
 		}
 		logPath := filepath.Join(envConfig.Archives.LogDir, "maestro_execution.log")
-		tailLogFile(logPath, done)
+		tailLogFile(ctx, logPath)
 	}()
 
 	// Inicia o comando e espera ele terminar
 	if err := cmd.Start(); err != nil {
 		fmt.Printf("Erro ao iniciar o maestro: %v\n", err)
-		close(done)
 		return
 	}
 
-	err = cmd.Wait()
-	close(done) // Sinaliza para a goroutine de tail parar
-	wg.Wait()   // Espera a goroutine de tail terminar
+	err := cmd.Wait()
+	cancel()  // Sinaliza para a goroutine de tail parar
+	wg.Wait() // Espera a goroutine de tail terminar
 
 	if err != nil {
 		fmt.Printf("\n[-] Maestro finalizou com erro.\n")
@@ -341,29 +344,23 @@ func triggerMaestro() {
 }
 
 // tailLogFile monitora um arquivo de log e imprime novas linhas.
-func tailLogFile(filepath string, done <-chan bool) {
-	// Implementação simplificada de 'tail -f'
-	// Em um cenário real, usar uma biblioteca como 'github.com/hpcloud/tail' seria melhor.
-	f, err := os.Open(filepath)
+func tailLogFile(ctx context.Context, filepath string) {
+	// Usando uma biblioteca de tail para uma implementação mais robusta.
+	// Ela lida com a criação de arquivos e é eficiente.
+	t, err := tail.TailFile(filepath, tail.Config{
+		Follow:    true,  // Segue o arquivo (como tail -f)
+		ReOpen:    true,  // Tenta reabrir o arquivo se ele for rotacionado ou recriado
+		MustExist: false, // Não falha se o arquivo não existir no início
+		Poll:      true,  // Usa polling, bom para sistemas de arquivos de rede ou quando inotify falha
+	})
 	if err != nil {
-		// O arquivo pode não existir ainda, espera um pouco.
-		time.Sleep(500 * time.Millisecond)
-		tailLogFile(filepath, done)
+		fmt.Printf("\n[ERROR] Falha ao iniciar o monitoramento do log: %v\n", err)
 		return
 	}
-	defer f.Close()
 
-	reader := bufio.NewReader(f)
-	for {
-		select {
-		case <-done:
-			return
-		default:
-			line, err := reader.ReadString('\n')
-			if err == nil {
-				fmt.Print("[Maestro] ", line)
-			}
-			time.Sleep(200 * time.Millisecond)
-		}
+	for line := range t.Lines {
+		fmt.Print("[Maestro] ", line.Text)
 	}
+
+	<-ctx.Done() // Espera o sinal de cancelamento
 }
