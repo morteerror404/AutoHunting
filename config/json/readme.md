@@ -9,10 +9,10 @@ config/
 └── json/
     ├── cleaner-templates.json
     ├── commands.json
+    ├── order-templates.json
     ├── db_info.json
     ├── env.json
-    ├── tokens.json
-    ├── selected_platform.json
+    └── tokens.json
 ```
 
 ## Arquivos JSON
