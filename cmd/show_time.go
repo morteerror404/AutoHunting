@@ -199,6 +199,9 @@ func selectPlatform(tokens Tokens) (string, error) {
 
 // checkAPIStatus testa a conexão com a API de uma plataforma
 func checkAPIStatus(platform string) error {
+	// TODO: Refatorar esta função para evitar repetição de código.
+	// A lógica de fazer um GET e verificar o status code é a mesma para todas as plataformas.
+	// Criar uma função auxiliar `testEndpoint(platformName, url)` que recebe a URL e o nome da plataforma, e então chamar essa função dentro do switch.
 	switch platform {
 	case "hackerone":
 		fmt.Println("Testando a conexão com a API do HackerOne...")

@@ -309,6 +309,9 @@ func RunRequestAPI(apiDirtResultsPath string, platform string, tokens Tokens) er
 		}
 		fmt.Fprintf(os.Stderr, "[hackerone] %d handles encontrados. buscando escopos...\n", len(handles))
 
+		// TODO: Paralelizar a busca de escopos. Atualmente, é feita sequencialmente para cada handle.
+		// Usar goroutines e um WaitGroup para buscar escopos de múltiplos handles simultaneamente pode acelerar muito o processo.
+		// É preciso garantir que a adição ao slice 'allScopes' seja segura para concorrência (usando um mutex).
 		for _, h := range handles {
 			scopes, errS := fetchHackerOneStructuredScopes(h, tokens.HackerOne.Username, tokens.HackerOne.ApiKey)
 			if errS != nil {
@@ -318,9 +321,13 @@ func RunRequestAPI(apiDirtResultsPath string, platform string, tokens Tokens) er
 			allScopes = append(allScopes, scopes...)
 		}
 
-	// Adicione casos para 'bugcrowd', 'intigriti', 'yeswehack' aqui quando as funções de fetch forem implementadas.
+	// TODO: Implementar a coleta de escopos para as outras plataformas.
 	// case "bugcrowd":
 	// 	// allScopes, err = fetchBugcrowdScopes(tokens.Bugcrowd.Token)
+	// case "intigriti":
+	// 	// allScopes, err = fetchIntigritiScopes(tokens.Intigriti.Token)
+	// case "yeswehack":
+	// 	// allScopes, err = fetchYesWeHackScopes(tokens.YesWeHack.Token)
 
 	default:
 		return fmt.Errorf("plataforma '%s' não suportada para coleta de API", platform)

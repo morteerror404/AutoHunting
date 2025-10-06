@@ -138,6 +138,9 @@ func stepRequestAPI(ctx *MaestroContext) error {
 }
 
 func stepRunScanners(ctx *MaestroContext) error {
+	// TODO: Executar scanners em paralelo.
+	// Atualmente, as ferramentas (nmap, ffuf) rodam uma após a outra.
+	// Podemos usar goroutines e um sync.WaitGroup para disparar múltiplos runners simultaneamente, um para cada ferramenta.
 	outDir := ctx.Config.Path.ToolDirtDir
 	for tool, args := range map[string]string{
 		"nmap": ctx.Commands.Nmap["nmap_slow"],
@@ -151,6 +154,9 @@ func stepRunScanners(ctx *MaestroContext) error {
 }
 
 func stepCleanResults(ctx *MaestroContext) error {
+	// TODO: Paralelizar a limpeza dos arquivos.
+	// A iteração sobre os arquivos de resultado é sequencial.
+	// Podemos criar um pool de workers para processar múltiplos arquivos em paralelo, acelerando esta etapa.
 	outDir := ctx.Config.Path.ToolDirtDir
 	files, err := os.ReadDir(outDir)
 	if err != nil {
@@ -176,6 +182,9 @@ func stepCleanResults(ctx *MaestroContext) error {
 }
 
 func stepStoreResults(ctx *MaestroContext) error {
+	// TODO: Paralelizar a inserção no banco de dados.
+	// Assim como na limpeza, o processamento dos arquivos para inserção no DB é sequencial.
+	// Um pool de workers pode ser usado aqui para ler os arquivos e preparar as transações em paralelo.
 	dbConn, err := db.ConnectDB()
 	if err != nil {
 		return fmt.Errorf("erro ao conectar ao DB: %w", err)

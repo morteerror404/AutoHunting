@@ -143,6 +143,9 @@ func ProcessCleanFile(filename string, db *sql.DB) error {
 		for i := range columns {
 			placeholders[i] = fmt.Sprintf("$%d", i+1)
 		}
+		// TODO: Abstrair o dialeto SQL.
+		// O uso de placeholders como '$1, $2' é específico do PostgreSQL.
+		// Para suportar outros bancos (ex: MySQL que usa '?'), seria necessário adaptar a query com base no 'db.DriverName()'.
 		query := fmt.Sprintf("INSERT INTO %s VALUES (%s)", tableName, strings.Join(placeholders, ", "))
 
 		// Converte colunas para []interface{} para o Exec
