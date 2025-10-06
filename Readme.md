@@ -297,18 +297,6 @@ Este é o módulo de coleta de dados de alto nível.
 
 ---
 
-## 4. AI\_scope\_interpreter.go
-
-Este módulo adiciona a inteligência de processamento de linguagem natural ao fluxo.
-
-1.  **Entrada:** Recebe as políticas de texto bruto do `Request_API.go`.
-2.  **Interpretação Inteligente:** Envia o texto da política para uma API de LLM com um *prompt* específico.
-3.  **Extração de Escopo:** Extrai **alvos explícitos** Wildcards, Domínios, CIDRs.
-4.  **Detecção de Vetores:** Usa **variáveis de ambiente** de alto nível para instruir a IA a identificar e retornar **vetores de ataque de alta prioridade** RCE, SSRF, Broken Access Control e o valor de recompensa associado, que são armazenados em um campo JSON.
-5.  **Saída:** Retorna os alvos e vetores de alta prioridade em um array JSON limpo para o `Process_results.go`.
-
----
-
 ## 5. Process\_results.go
 
 Este módulo atua como o unificador e validador final dos dados de escopo.

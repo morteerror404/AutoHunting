@@ -1,9 +1,8 @@
-package data_manager
+package runner
 
 import (
 	"context"
 	"encoding/xml"
-	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,10 +10,9 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"io/ioutil"
 )
 
-// Estruturas mínimas para parse do XML do nmap (apenas campos que usaremos)
+// NmapRun e estruturas relacionadas (mantidas do original)
 type NmapRun struct {
 	XMLName xml.Name `xml:"nmaprun"`
 	Hosts   []Host   `xml:"host"`
@@ -51,97 +49,91 @@ type PortState struct {
 }
 
 type Service struct {
-	Name string `xml:"name,attr"`
+	Name    string `xml:"name,attr"`
 	Product string `xml:"product,attr,omitempty"`
 	Version string `xml:"version,attr,omitempty"`
 }
 
-func data_manager() {
-	// flags / parâmetros CLI
-	targetsFlag := flag.String("targets", "", "Lista de targets separados por vírgula (ex: 10.0.0.1,example.com)")
-	portsFlag := flag.String("ports", "1-1000", "Portas para passar ao nmap (ex: 22,80,443 ou 1-1000)")
-	nmapArgs := flag.String("nmap-args", "-sV -Pn", "Argumentos adicionais para nmap (entre aspas)")
-	concurrency := flag.Int("concurrency", 5, "Número de workers concorrentes")
-	timeout := flag.Int("timeout", 60, "Timeout em segundos por execução de ferramenta")
-	outDir := flag.String("out-dir", "output", "Pasta para salvar outputs (XML e relatórios)")
-
-	flag.Parse()
-
-	if *targetsFlag == "" {
-		fmt.Println("Use --targets para indicar alvos (ex: --targets=example.com,10.0.0.5)")
-		os.Exit(1)
+// Run executa varreduras com a ferramenta especificada (nmap ou ffuf)
+func Run(targetsFile, args, outDir string) error {
+	// Ler alvos do arquivo
+	data, err := os.ReadFile(targetsFile)
+	if err != nil {
+		return fmt.Errorf("erro ao ler arquivo de alvos %s: %w", targetsFile, err)
 	}
-
-	// prepara targets slice
-	targets := strings.Split(*targetsFlag, ",")
+	targets := strings.Split(strings.TrimSpace(string(data)), "\n")
 	for i := range targets {
 		targets[i] = strings.TrimSpace(targets[i])
 	}
 
-	// cria pasta de saída
-	if err := os.MkdirAll(*outDir, 0o755); err != nil {
-		fmt.Printf("Erro criando out dir: %v\n", err)
-		os.Exit(1)
+	// Criar pasta de saída
+	if err := os.MkdirAll(outDir, 0755); err != nil {
+		return fmt.Errorf("erro ao criar diretório de saída %s: %w", outDir, err)
 	}
 
-	// worker pool
+	// Configurar worker pool
 	tasks := make(chan string, len(targets))
 	results := make(chan string, len(targets))
 	var wg sync.WaitGroup
 
-	// função worker
-	worker := func(id int) {
-		for t := range tasks {
-			fmt.Printf("[worker %d] processando %s\n", id, t)
-			// compõe comando nmap (usa -oX - para voltar XML no stdout)
-			args := []string{}
-			// split de nmapArgs em array simples (nota: não trata quoting complexo)
-			if *nmapArgs != "" {
-				extra := strings.Fields(*nmapArgs)
-				args = append(args, extra...)
-			}
-			args = append(args, "-p", *portsFlag, "-oX", "-", t)
+	// Determinar ferramenta com base nos argumentos
+	tool := "nmap"
+	if strings.Contains(args, "ffuf") {
+		tool = "ffuf"
+	}
 
-			// executa nmap com timeout
-			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*timeout)*time.Second)
+	// Worker function
+	worker := func(id int) {
+		defer wg.Done()
+		for target := range tasks {
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
-			out, err := runCommandContext(ctx, "nmap", args...)
+
+			filename := fmt.Sprintf("%s_%s_%s.txt", tool, sanitizeFilename(target), time.Now().Format("20060102150405"))
+			outputPath := filepath.Join(outDir, filename)
+
+			var cmdArgs []string
+			if tool == "nmap" {
+				cmdArgs = append(strings.Fields(args), "-oX", outputPath, target)
+			} else if tool == "ffuf" {
+				wordlist := strings.Replace(args, "FUZZ", target, 1)
+				cmdArgs = append(strings.Fields(wordlist), "-o", outputPath)
+			}
+
+			output, err := runCommandContext(ctx, tool, cmdArgs...)
 			if err != nil {
-				fmt.Printf("[worker %d] erro nmap %s: %v\n", id, t, err)
-				results <- fmt.Sprintf("%s: error: %v", t, err)
+				results <- fmt.Sprintf("Worker %d: erro ao escanear %s com %s: %v", id, target, tool, err)
 				continue
 			}
 
-			// salva XML bruto (opcional)
-			xmlPath := filepath.Join(*outDir, fmt.Sprintf("%s_nmap.xml", sanitizeFilename(t)))
-			if err := ioutil.WriteFile(xmlPath, out, 0o644); err != nil {
-				fmt.Printf("[worker %d] erro salvando xml: %v\n", id, err)
+			var report string
+			if tool == "nmap" {
+				report = parseNmapXML(output, target)
+			} else {
+				report = string(output) // Para ffuf, usar saída bruta
 			}
+			results <- fmt.Sprintf("Worker %d: %s\n%s", id, target, report)
 
-			// parse do XML e geração de relatório simples
-			report := parseNmapXML(out, t)
-			reportPath := filepath.Join(*outDir, fmt.Sprintf("%s_report.txt", sanitizeFilename(t)))
-			if err := ioutil.WriteFile(reportPath, []byte(report), 0o644); err != nil {
-				fmt.Printf("[worker %d] erro salvando report: %v\n", id, err)
+			// Salvar saída bruta
+			if err := os.WriteFile(outputPath, output, 0644); err != nil {
+				results <- fmt.Sprintf("Worker %d: erro ao salvar saída para %s: %v", id, outputPath, err)
 			}
-			results <- fmt.Sprintf("%s: done (xml=%s, report=%s)", t, xmlPath, reportPath)
 		}
-		wg.Done()
 	}
 
-	// inicia workers
-	for i := 0; i < *concurrency; i++ {
+	// Iniciar workers
+	for i := 0; i < 5; i++ {
 		wg.Add(1)
 		go worker(i + 1)
 	}
 
-	// envia tasks
+	// Enviar tarefas
 	for _, t := range targets {
 		tasks <- t
 	}
 	close(tasks)
 
-	// espera e coleta resultados
+	// Esperar e coletar resultados
 	go func() {
 		wg.Wait()
 		close(results)
@@ -151,18 +143,17 @@ func data_manager() {
 		fmt.Println("[result]", r)
 	}
 
-	fmt.Println("All done.")
+	return nil
 }
 
-// runCommandContext roda um comando com contexto (timeout) e retorna stdout bytes + erro
+// runCommandContext executa um comando com timeout
 func runCommandContext(ctx context.Context, bin string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, bin, args...)
-	// opcional: redirecionar stderr para facilitar debug
 	cmd.Stderr = os.Stderr
 	return cmd.Output()
 }
 
-// parseNmapXML faz um parse simples do XML do nmap e retorna relatório legível
+// parseNmapXML faz parse do XML do nmap
 func parseNmapXML(xmlBytes []byte, target string) string {
 	var n NmapRun
 	if err := xml.Unmarshal(xmlBytes, &n); err != nil {
@@ -183,7 +174,6 @@ func parseNmapXML(xmlBytes []byte, target string) string {
 				ip = a.Addr
 				break
 			}
-			// fallback pega primeiro address
 			if ip == "unknown" {
 				ip = a.Addr
 			}
@@ -202,17 +192,16 @@ func parseNmapXML(xmlBytes []byte, target string) string {
 	return b.String()
 }
 
-// sanitizeFilename transforma string em nome de arquivo safe
+// sanitizeFilename transforma string em nome de arquivo seguro
 func sanitizeFilename(s string) string {
 	repl := strings.NewReplacer(":", "_", "/", "_", "\\", "_", " ", "_", "*", "_", "?", "_", "\"", "_", "<", "_", ">", "_", "|", "_")
 	return repl.Replace(s)
 }
 
+// min retorna o menor valor entre dois inteiros
 func min(a, b int) int {
 	if a < b {
 		return a
 	}
 	return b
 }
-
-data_manager();
