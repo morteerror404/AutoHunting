@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	
+
 	"AutoHunting/utils"
 )
 
@@ -59,22 +59,14 @@ func ConnectDB() (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("erro ao abrir conexão com o DB: %w", err)
 	}
+
 	commands, err := getCommandsConfig(dbType, dbInfo)
 	if err != nil {
 		db.Close()
 		return nil, fmt.Errorf("erro ao obter comandos de configuração: %w", err)
 	}
-	if err != nil {
-		return nil, fmt.Errorf("erro ao abrir conexão com o DB: %w", err)
-	}
-	fmt.Println("Conexão com PostgreSQL estabelecida com sucesso!")
-	return db, nil
-} 
-	defer func() {
-		if err := db.Close(); err != nil {
-			fmt.Println("Erro ao fechar a conexão com o banco de dados:", err)
-		}
-	}
+	_ = commands // Usar 'commands' em alguma lógica futura para evitar erro de variável não utilizada
+
 	fmt.Println("Conexão com PostgreSQL estabelecida com sucesso!")
 	return db, nil
 }

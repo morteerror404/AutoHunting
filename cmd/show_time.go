@@ -102,9 +102,19 @@ func handleDBMenu() {
 	fmt.Print("Escolha: ")
 	reader := bufio.NewReader(os.Stdin)
 	input, _ := reader.ReadString('\n')
-	if strings.TrimSpace(input) == "1" {
-		tokens, _ := loadTokens()
-		platform, _ := selectPlatform(tokens)
+	choice := strings.TrimSpace(input)
+
+	if choice == "1" {
+		tokens, err := loadTokens()
+		if err != nil {
+			fmt.Printf("Erro ao carregar tokens: %v\n", err)
+			return
+		}
+		platform, err := selectPlatform(tokens)
+		if err != nil {
+			fmt.Printf("Erro ao selecionar plataforma: %v\n", err)
+			return
+		}
 		if platform != "" {
 			if err := showScopes(platform); err != nil {
 				fmt.Printf("Erro ao buscar escopos: %v\n", err)

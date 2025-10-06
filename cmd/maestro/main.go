@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"/AutoHunting/api"
-	"/AutoHunting/data/cleaner"
-	"/AutoHunting/data/db"
+	"AutoHunting/api"
+	"AutoHunting/data/cleaner"
+	"AutoHunting/data/db"
 	"AutoHunting/data/runner"
 	"AutoHunting/utils"
 )
@@ -182,13 +182,14 @@ func stepStoreResults(ctx *MaestroContext) error {
 	}
 	defer dbConn.Close()
 
-	cleanDir := ctx.Config.Path.ToolCleanedDir
+	cleanDir := ctx.Config.Path.ToolCleanedDir // Usar o caminho correto do env.json
 	files, err := os.ReadDir(cleanDir)
 	if err != nil {
 		return fmt.Errorf("falha ao ler diretório de resultados limpos '%s': %w", cleanDir, err)
 	}
 
 	for _, f := range files {
+		// Apenas processar arquivos que contêm "_clean_" no nome, ignorando diretórios.
 		if f.IsDir() || !strings.Contains(f.Name(), "_clean_") {
 			continue
 		}
