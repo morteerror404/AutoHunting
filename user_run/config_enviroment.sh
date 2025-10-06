@@ -43,9 +43,11 @@ show_menu(){
     echo "1) Declarar local da pasta de informações SUJAS"
     echo "2) Declarar local da pasta de informações LIMPAS"
     echo "3) Declarar local da pasta de LOGS"
-    echo "4) Declarar localização da pasta de JSONs"
-    echo "5) Configurar pasta de wordlists"
+    echo "4) Declarar local da pasta de templates de para LIMPEZA"
+    echo "5) Configurar pasta de WORDLISTs"
     echo "6) Configurar serviço de inicialização automática"
     echo "7) Mostrar configuração atual"
+    echo "8) Configuração de diretórios padrões da ferramenta"
     echo "0) Voltar"
 }
+

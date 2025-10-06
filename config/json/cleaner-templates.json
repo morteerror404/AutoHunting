@@ -1,0 +1,7 @@
+{
+    "nmap":"/home/cleaner/templates/nmap",
+    "ffuf":"/home/cleaner/templates/ffuf",
+    "nuclei":"/home/cleaner/templates/nuclei",
+    "httpx":"/home/cleaner/templates/httpx"
+
+}
