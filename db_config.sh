@@ -216,6 +216,21 @@ create_bughunt_db() {
     log "INFO" "Criando banco bughunt no $db (se não existir) e registrando marker."
     case "$db" in
         postgresql)
+            if check_command sqlite3; then
+                DB_PATH="bug_hunt.db"
+                sqlite3 "$DB_PATH" || {
+                    echo -e "${YELLOW}Aviso: Falha ao criar banco bughunt no SQLite${NC}"
+                }
+                log "INFO" "Banco SQLite criado em $DB_PATH."
+
+            else
+                log "ERROR" "sqlite3 não encontrado."
+                echo -e "${RED}Erro: sqlite3 não encontrado.${NC}"
+                return 1
+            fi
+            ;;
+
+        postgresql)
             if check_command psql && check_postgres_user; then
                 if ! sudo -u postgres psql -c "CREATE DATABASE bughunt;" 2>&1 | tee -a "$LOG_FILE"; then
                     echo -e "${YELLOW}Aviso: Falha ao criar banco bughunt no PostgreSQL${NC}"
@@ -283,6 +298,10 @@ create_logger_user() {
     case "$db" in
         postgresql)
             if check_command psql && check_postgres_user; then
+
+
+
+
                 if ! sudo -u postgres psql -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${LOGGER_USER}') THEN CREATE ROLE ${LOGGER_USER} LOGIN PASSWORD '${pass}'; END IF; END\$\$;" 2>&1 | tee -a "$LOG_FILE"; then
                     echo -e "${YELLOW}Aviso: Falha ao criar usuário logger no PostgreSQL${NC}"
                 fi
@@ -732,6 +751,13 @@ select_db_menu() {
         echo "2) MySQL"
         echo "3) MongoDB"
         echo "4) PostgreSQL"
+		echo "5) SQLite"
+
+
+
+
+
+
         echo "0) Voltar"
         read -rp "Escolha: " opt
         case "$opt" in
@@ -763,6 +789,18 @@ select_db_menu() {
                 config_generic_menu
                 ;;
             4)
+                SELECTED_DB="sqlite"
+                log "INFO" "Selecionado: SQLite"
+                install_db "SQLite" "sqlite3" "sqlite" || {
+                    log "ERROR" "Falha na instalação SQLite"
+                    echo -e "${RED}Erro: Falha na instalação do SQLite${NC}"
+                }
+                config_generic_menu
+                ;;
+
+
+
+            4)
                 SELECTED_DB="postgresql"
                 log "INFO" "Selecionado: PostgreSQL"
                 install_db "PostgreSQL" "postgresql postgresql-contrib" "postgresql" || {
@@ -771,6 +809,9 @@ select_db_menu() {
                 }
                 config_generic_menu
                 ;;
+
+
+
             0) break ;;
             *) echo "Opção inválida" ;;
         esac
@@ -779,10 +820,17 @@ select_db_menu() {
 
 # ---------- Main menu ----------
 main_menu() {
+    check_existing_db
+    if find_db_info; then
+        echo -e "${GREEN}Configurações do db_info.json:${NC}"
+    else
+        echo "db_info.json não encontrado."
+    fi
     verifica_root
     configurar_log
     detect_package_manager
     while true; do
+
         echo -e "${BOLD}${BLUE}=== Menu Principal DB Config ===${NC}"
         echo "1) Instalar/Configurar Banco de Dados"
         echo "2) Ativar/Desativar Cron de Retenção"

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"api"
 	"data/cleaner"
 	"data/db"
 	"data/runner"
@@ -16,9 +15,9 @@ import (
 )
 
 type Config struct {
-	APIRawResultsPath    string `json:"api_raw_results_path"`
+	APIRawResultsPath     string `json:"api_raw_results_path"`
 	AIProcessedScopesPath string `json:"ai_processed_scopes_path"`
-	WordlistDir          string `json:"wordlist_dir"`
+	WordlistDir           string `json:"wordlist_dir"`
 }
 
 type Commands struct {
