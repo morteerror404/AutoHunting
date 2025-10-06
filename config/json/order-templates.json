@@ -1,0 +1,10 @@
+{
+    "execution_plans": {
+        "fullHunt": [
+            { "step": "RequestAPI", "description": "Coletando alvos via APIs de bug bounty..." },
+            { "step": "RunScanners", "description": "Executando varreduras nos alvos coletados..." },
+            { "step": "CleanResults", "description": "Limpando e processando resultados das varreduras..." },
+            { "step": "StoreResults", "description": "Armazenando resultados limpos no banco de dados..." }
+        ]
+    }
+}

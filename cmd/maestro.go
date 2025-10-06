@@ -48,6 +48,13 @@ type ExecutionLog struct {
 	Error     string
 }
 
+type MaestroOrder struct {
+	Platform string             `json:"platform"`
+	Task     string             `json:"task"`
+	Steps    []utils.MaestroTask `json:"steps"`
+}
+
+
 func main() {
 	start := time.Now()
 	logs := []ExecutionLog{}
@@ -84,13 +91,18 @@ func main() {
 
 	// Receber plataforma de show_time.go
 	platform, err := loadSelectedPlatform()
+	// Carregar a ordem de execução
+	order, err := loadExecutionOrder()
 	if err != nil {
 		logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: "LoadSelectedPlatform", Status: "Failed", Error: err.Error()})
+		logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: "LoadExecutionOrder", Status: "Failed", Error: err.Error()})
 		saveExecutionLog(logs)
 		fmt.Printf("Erro ao carregar plataforma selecionada: %v\n", err)
+		fmt.Printf("Erro ao carregar ordem de execução: %v\n", err)
 		os.Exit(1)
 	}
 	logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: "LoadSelectedPlatform", Status: "Success"})
+	logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: "LoadExecutionOrder", Status: "Success"})
 
 	// Executar request_api para coletar alvos
 	fmt.Println("Coletando alvos via APIs de bug bounty...")
@@ -101,6 +113,10 @@ func main() {
 		os.Exit(1)
 	}
 	logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: "RequestAPI", Status: "Success"})
+	// Iterar e executar cada passo da ordem
+	for _, step := range order.Steps {
+		fmt.Println(step.Description)
+		var stepErr error
 
 	// Executar runner para varreduras
 	fmt.Println("Executando varreduras...")
@@ -116,6 +132,44 @@ func main() {
 		}
 		logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: fmt.Sprintf("Runner_%s", tool), Status: "Success"})
 	}
+		switch step.Step {
+		case "RequestAPI":
+			stepErr = runRequestAPI(config.APIRawResultsPath, order.Platform, tokens)
+		case "RunScanners":
+			outDir := "output" // Idealmente, isso também viria do env.json
+			for tool, args := range map[string]string{
+				"nmap": commands.Nmap["nmap_slow"],
+				"ffuf": commands.Ffuf["default"],
+			} {
+				if err := runRunner(config.APIRawResultsPath, args, outDir, tool); err != nil {
+					stepErr = fmt.Errorf("erro no runner para %s: %w", tool, err)
+					break // Para a execução dos scanners se um falhar
+				}
+			}
+		case "CleanResults":
+			outDir := "output"
+			files, _ := os.ReadDir(outDir)
+			for _, f := range files {
+				if f.IsDir() || (!strings.HasPrefix(f.Name(), "nmap_") && !strings.HasPrefix(f.Name(), "ffuf_")) {
+					continue
+				}
+				filename := filepath.Join(outDir, f.Name())
+				template := "open_ports"
+				if strings.HasPrefix(f.Name(), "ffuf_") {
+					template = "endpoints"
+				}
+				if err := cleaner.CleanFile(filename, template); err != nil {
+					stepErr = fmt.Errorf("erro no cleaner para %s: %w", filename, err)
+					break
+				}
+			}
+		case "StoreResults":
+			dbConn, err := db.ConnectDB()
+			if err != nil {
+				stepErr = fmt.Errorf("erro ao conectar ao DB: %w", err)
+				break
+			}
+			defer dbConn.Close()
 
 	// Executar cleaner para processar resultados
 	fmt.Println("Limpando resultados...")
@@ -131,6 +185,20 @@ func main() {
 	for _, f := range files {
 		if f.IsDir() || (!strings.HasPrefix(f.Name(), "nmap_") && !strings.HasPrefix(f.Name(), "ffuf_")) {
 			continue
+			outDir := "output"
+			files, _ := os.ReadDir(outDir)
+			for _, f := range files {
+				if f.IsDir() || !strings.Contains(f.Name(), "_clean_") {
+					continue
+				}
+				filename := filepath.Join(outDir, f.Name())
+				if err := db.ProcessCleanFile(filename, dbConn); err != nil {
+					stepErr = fmt.Errorf("erro ao processar arquivo limpo %s: %w", filename, err)
+					break
+				}
+			}
+		default:
+			stepErr = fmt.Errorf("passo desconhecido na ordem de execução: %s", step.Step)
 		}
 		filename := filepath.Join(outDir, f.Name())
 		template := "open_ports"
@@ -160,6 +228,11 @@ func main() {
 	for _, f := range files {
 		if f.IsDir() || !strings.Contains(f.Name(), "_clean_") {
 			continue
+		if stepErr != nil {
+			logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: step.Step, Status: "Failed", Error: stepErr.Error()})
+			saveExecutionLog(logs)
+			fmt.Printf("Erro ao executar o passo '%s': %v\n", step.Step, stepErr)
+			os.Exit(1) // Interrompe a execução em caso de erro
 		}
 		filename := filepath.Join(outDir, f.Name())
 		if err := db.ProcessCleanFile(filename, dbConn); err != nil {
@@ -168,6 +241,7 @@ func main() {
 			continue
 		}
 		logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: fmt.Sprintf("ProcessCleanFile_%s", f.Name()), Status: "Success"})
+		logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: step.Step, Status: "Success"})
 	}
 
 	logs = append(logs, ExecutionLog{Timestamp: time.Now(), Step: "ExecutionCompleted", Status: "Success"})
@@ -206,11 +280,30 @@ func loadTokens() (Tokens, error) {
 func loadSelectedPlatform() (string, error) {
 	var selection struct {
 		Platform string `json:"platform"`
+// loadExecutionOrder carrega a ordem de execução gerada.
+func loadExecutionOrder() (MaestroOrder, error) {
+	var order MaestroOrder
+	var envConfig struct {
+		Archives struct {
+			MaestroExecOrder string `json:"maestro_exec_order"`
+		} `json:"archives"`
 	}
 	if err := utils.LoadJSON("selected_platform.json", &selection); err != nil {
 		return "", fmt.Errorf("erro ao carregar selected_platform.json: %w", err)
+	if err := utils.LoadJSON("env.json", &envConfig); err != nil {
+		return order, fmt.Errorf("erro ao carregar env.json para encontrar a ordem: %w", err)
 	}
 	return selection.Platform, nil
+
+	// Esta função não pode usar utils.LoadJSON diretamente porque o caminho é absoluto.
+	data, err := os.ReadFile(envConfig.Archives.MaestroExecOrder)
+	if err != nil {
+		return order, fmt.Errorf("erro ao ler o arquivo de ordem do maestro '%s': %w", envConfig.Archives.MaestroExecOrder, err)
+	}
+	if err := json.Unmarshal(data, &order); err != nil {
+		return order, fmt.Errorf("erro ao decodificar a ordem do maestro: %w", err)
+	}
+	return order, nil
 }
 
 // runRequestAPI executa a coleta de alvos via request_api

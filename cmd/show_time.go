@@ -1,15 +1,18 @@
 package main
 
 import (
+	"bytes"
 	"bufio"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"data/db"
@@ -55,6 +58,8 @@ func main() {
 	if err != nil {
 		fmt.Printf("Erro ao carregar env.json: %v\n", err)
 		os.Exit(1)
+	for {
+		showMainMenu()
 	}
 	// Configurar o arquivo de log
 	logFile := filepath.Join(config.APIRawResultsPath, "show_time.log")
@@ -62,14 +67,44 @@ func main() {
 	if err != nil {
 		fmt.Printf("Erro ao abrir arquivo de log: %v\n", err)
 		os.Exit(1)
+}
+
+func showMainMenu() {
+	fmt.Println("\n===== AutoHunting - Menu Principal =====")
+	fmt.Println("1) Iniciar Caçada (Hunt)")
+	fmt.Println("2) Consultar Banco de Dados")
+	fmt.Println("3) Verificar Status das APIs")
+	fmt.Println("0) Sair")
+	fmt.Print("Escolha uma opção: ")
+
+	reader := bufio.NewReader(os.Stdin)
+	input, _ := reader.ReadString('\n')
+	choice := strings.TrimSpace(input)
+
+	switch choice {
+	case "1":
+		handleHuntMenu()
+	case "2":
+		handleDBMenu()
+	case "3":
+		handleAPIStatusMenu()
+	case "0":
+		fmt.Println("Saindo...")
+		os.Exit(0)
+	default:
+		fmt.Println("Opção inválida.")
 	}
+}
 
 
 	// Carregar tokens
+func handleHuntMenu() {
 	tokens, err := loadTokens()
 	if err != nil {
 		fmt.Printf("Erro ao carregar tokens.json: %v\n", err)
 		os.Exit(1)
+		fmt.Printf("Erro ao carregar tokens: %v\n", err)
+		return
 	}
 
 		// Definir flags para o logger
@@ -81,8 +116,14 @@ func main() {
 
 	// Monitorar diretório de saída (output)
 	metrics, err = monitorDirectory(outputDir, metrics)
+	platform, err := selectPlatform(tokens)
 	if err != nil {
 		fmt.Printf("Erro ao monitorar diretório %s: %v\n", outputDir, err)
+		fmt.Printf("Erro: %v\n", err)
+		return
+	}
+	if platform == "" {
+		return // Usuário cancelou
 	}
 
 	// Monitorar diretório de resultados da API
@@ -90,6 +131,10 @@ func main() {
 	metrics, err = monitorDirectory(apiDir, metrics)
 	if err != nil {
 		fmt.Printf("Erro ao monitorar diretório %s: %v\n", apiDir, err)
+	// Salva a plataforma para o maestro usar
+	if err := saveSelectedPlatform(platform); err != nil {
+		fmt.Printf("Erro ao salvar plataforma: %v\n", err)
+		return
 	}
 
 	// Exibir menu para selecionar plataforma e mostrar escopos
@@ -102,10 +147,46 @@ func main() {
 		if err := saveSelectedPlatform(platform); err != nil {
 			fmt.Printf("Erro ao salvar plataforma selecionada: %v\n", err)
 			metrics.TotalErrors++
+	// Cria a ordem e dispara o maestro
+	task := "runFullHunt"
+	if err := utils.CreateExecutionOrder(task, platform); err != nil {
+		fmt.Printf("Erro ao criar ordem de execução para o maestro: %v\n", err)
+		return
+	}
+	triggerMaestro()
+}
+
+func handleDBMenu() {
+	// Lógica para o menu do banco de dados
+	fmt.Println("\n--- Menu Banco de Dados ---")
+	fmt.Println("1) Listar escopos de uma plataforma")
+	fmt.Println("0) Voltar")
+	fmt.Print("Escolha: ")
+	reader := bufio.NewReader(os.Stdin)
+	input, _ := reader.ReadString('\n')
+	if strings.TrimSpace(input) == "1" {
+		tokens, _ := loadTokens()
+		platform, _ := selectPlatform(tokens)
+		if platform != "" {
+			if err := showScopes(platform); err != nil {
+				fmt.Printf("Erro ao buscar escopos: %v\n", err)
+			}
 		}
 		if err := showScopes(platform); err != nil {
 			fmt.Printf("Erro ao exibir escopos: %v\n", err)
 			metrics.TotalErrors++
+	}
+}
+
+func handleAPIStatusMenu() {
+	tokens, _ := loadTokens()
+	platform, _ := selectPlatform(tokens)
+	if platform != "" {
+		fmt.Println("Verificando status...")
+		if err := checkAPIStatus(platform); err != nil {
+			fmt.Printf("Erro ao verificar API: %v\n", err)
+		} else {
+			fmt.Println("API parece estar respondendo corretamente.")
 		}
 	}
 
@@ -176,6 +257,7 @@ func selectPlatform(tokens Tokens) (string, error) {
 		platforms = append(platforms, "bugcrowd")
 	}
 
+	if tokens.Intigriti.Token != "" {
 		platforms = append(platforms, "intigriti")
 	}
 	if tokens.YesWeHack.Token != "" {
@@ -260,6 +342,7 @@ func checkAPIStatus(platform string) error {
 	return fmt.Errorf("plataforma %s não suportada", platform)
 // saveSelectedPlatform salva a plataforma selecionada em json/selected_platform.json
 func saveSelectedPlatform(platform string) error {
+	// Esta função agora é chamada apenas quando uma caçada é iniciada
 	selection := struct {
 		Platform string `json:"platform"`
 	}{Platform: platform}
@@ -310,4 +393,69 @@ func showScopes(platform string) error {
 	}
 
 	return nil
+}
+
+// triggerMaestro escreve a ordem e executa o maestro, monitorando o log.
+func triggerMaestro() {
+	// 1. Executar o maestro em um novo processo
+	fmt.Println("\n[+] Disparando o maestro... Acompanhe o progresso abaixo.")
+	cmd := exec.Command("go", "run", "cmd/maestro.go")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	// 2. Iniciar o monitoramento do log em uma goroutine
+	var wg sync.WaitGroup
+	wg.Add(1)
+	done := make(chan bool)
+
+	go func() {
+		defer wg.Done()
+		tailLogFile("maestro_execution.log", done)
+	}()
+
+	// Inicia o comando e espera ele terminar
+	if err := cmd.Start(); err != nil {
+		fmt.Printf("Erro ao iniciar o maestro: %v\n", err)
+		close(done)
+		return
+	}
+
+	err = cmd.Wait()
+	close(done) // Sinaliza para a goroutine de tail parar
+	wg.Wait()   // Espera a goroutine de tail terminar
+
+	if err != nil {
+		fmt.Printf("\n[-] Maestro finalizou com erro: %v\n", err)
+		fmt.Printf("Stderr: %s\n", stderr.String())
+	} else {
+		fmt.Println("\n[+] Maestro concluiu a execução com sucesso.")
+	}
+}
+
+// tailLogFile monitora um arquivo de log e imprime novas linhas.
+func tailLogFile(filepath string, done <-chan bool) {
+	// Implementação simplificada de 'tail -f'
+	// Em um cenário real, usar uma biblioteca como 'github.com/hpcloud/tail' seria melhor.
+	f, err := os.Open(filepath)
+	if err != nil {
+		// O arquivo pode não existir ainda, espera um pouco.
+		time.Sleep(500 * time.Millisecond)
+		tailLogFile(filepath, done)
+		return
+	}
+	defer f.Close()
+
+	reader := bufio.NewReader(f)
+	for {
+		select {
+		case <-done:
+			return
+		default:
+			line, err := reader.ReadString('\n')
+			if err == nil {
+				fmt.Print("[Maestro] ", line)
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
 }
