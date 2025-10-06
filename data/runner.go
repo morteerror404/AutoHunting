@@ -1,4 +1,4 @@
-package runner
+package data_manager
 
 import (
 	"context"
@@ -56,7 +56,7 @@ type Service struct {
 	Version string `xml:"version,attr,omitempty"`
 }
 
-func runner() {
+func data_manager() {
 	// flags / parâmetros CLI
 	targetsFlag := flag.String("targets", "", "Lista de targets separados por vírgula (ex: 10.0.0.1,example.com)")
 	portsFlag := flag.String("ports", "1-1000", "Portas para passar ao nmap (ex: 22,80,443 ou 1-1000)")
@@ -215,4 +215,4 @@ func min(a, b int) int {
 	return b
 }
 
-runner();
+data_manager();

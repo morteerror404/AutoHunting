@@ -1,4 +1,4 @@
-package db_manager_main
+package data_manager
 
 import (
 	"bufio"
@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	_ "github.com/lib/pq" // Driver do PostgreSQL
 )
 
 // Estrutura para configurar a conexão com o banco de dados.
@@ -113,7 +112,7 @@ func processCleanFile(filename string, db *sql.DB) error {
 	return nil
 }
 
-func db_manager_main() {
+func data_manager() {
 	// 1. Conectar ao Banco de Dados
 	db, err := connectDB()
 	if err != nil {

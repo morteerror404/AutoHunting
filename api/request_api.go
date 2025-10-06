@@ -1,4 +1,4 @@
-package request_api_main
+package api
 
 import (
 	"bufio"
@@ -379,8 +379,12 @@ func fetchHackerOneStructuredScopes(handle, username, apiKey string) ([]string, 
 			out = append(out, attr.Identifier)
 			continue
 		}
-		// filtrar por tipos úteis (Dorequest_api_main, Url, Cidr)
-		if strings.Contains(strings.ToLower(attr.AssetType), "dorequest_api_main") || strings.Contains(strings.ToLower(attr.AssetType), "url") || strings.Contains(strings.ToLower(attr.AssetType), "cidr") {
+		// filtrar por tipos úteis (Doapi
+	
+		//, Url, Cidr)
+		if strings.Contains(strings.ToLower(attr.AssetType), "doapi
+	
+	") || strings.Contains(strings.ToLower(attr.AssetType), "url") || strings.Contains(strings.ToLower(attr.AssetType), "cidr") {
 			out = append(out, attr.Identifier)
 		}
 	}
@@ -558,9 +562,9 @@ func getScopes(h1User, h1Key, bcToken, intToken, ywhToken string) {
 }
 
 // -----------------------------
-// request_api_main
+// api
 // -----------------------------
-func request_api_main() {
+func api() {
 	// flags
 	h1User := flag.String("h1-user", "", "HackerOne username")
 	h1Key := flag.String("h1-key", "", "HackerOne API key")

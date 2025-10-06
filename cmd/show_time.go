@@ -8,7 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"db_manager_main"
+	"data_Manager/db_manager_main"
+	"data_Manager/utils"
 )
 
 type Metrics struct {
@@ -23,14 +24,37 @@ type Config struct {
 	WordlistDir          string `json:"wordlist_dir"`
 }
 
+type Tokens struct {
+	HackerOne struct {
+		Username string `json:"username"`
+		ApiKey   string `json:"api_key"`
+	} `json:"hackerone"`
+	Bugcrowd struct {
+		Token string `json:"token"`
+	} `json:"bugcrowd"`
+	Intigriti struct {
+		Token string `json:"token"`
+	} `json:"intigriti"`
+	YesWeHack struct {
+		Token string `json:"token"`
+	} `json:"yeswehack"`
+}
+
 func main() {
 	start := time.Now()
 	metrics := Metrics{}
 
 	// Carregar configurações
-	config, err := loadConfig("env.json")
+	config, err := loadConfig()
 	if err != nil {
 		fmt.Printf("Erro ao carregar env.json: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Carregar tokens
+	tokens, err := loadTokens()
+	if err != nil {
+		fmt.Printf("Erro ao carregar tokens.json: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -49,7 +73,7 @@ func main() {
 	}
 
 	// Exibir menu para selecionar plataforma e mostrar escopos
-	platform, err := selectPlatform()
+	platform, err := selectPlatform(tokens)
 	if err != nil {
 		fmt.Printf("Erro ao selecionar plataforma: %v\n", err)
 		metrics.TotalErrors++
@@ -68,16 +92,21 @@ func main() {
 }
 
 // loadConfig carrega o arquivo env.json
-func loadConfig(filename string) (Config, error) {
+func loadConfig() (Config, error) {
 	var config Config
-	data, err := os.ReadFile(filename)
-	if err != nil {
-		return config, err
-	}
-	if err := json.Unmarshal(data, &config); err != nil {
+	if err := utils.LoadJSON("env.json", &config); err != nil {
 		return config, err
 	}
 	return config, nil
+}
+
+// loadTokens carrega o arquivo tokens.json
+func loadTokens() (Tokens, error) {
+	var tokens Tokens
+	if err := utils.LoadJSON("tokens.json", &tokens); err != nil {
+		return tokens, err
+	}
+	return tokens, nil
 }
 
 // monitorDirectory analisa arquivos em um diretório e atualiza métricas
@@ -93,7 +122,6 @@ func monitorDirectory(dir string, metrics Metrics) (Metrics, error) {
 			continue
 		}
 		metrics.TotalFilesProcessed++
-		// Verificar se o arquivo contém erros (ex.: buscar "error" no conteúdo)
 		filePath := filepath.Join(dir, f.Name())
 		data, err := os.ReadFile(filePath)
 		if err != nil {
@@ -109,8 +137,25 @@ func monitorDirectory(dir string, metrics Metrics) (Metrics, error) {
 }
 
 // selectPlatform exibe um menu interativo para selecionar a plataforma
-func selectPlatform() (string, error) {
-	platforms := []string{"hackerone", "bugcrowd", "intigriti", "yeswehack"}
+func selectPlatform(tokens Tokens) (string, error) {
+	platforms := []string{}
+	if tokens.HackerOne.ApiKey != "" {
+		platforms = append(platforms, "hackerone")
+	}
+	if tokens.Bugcrowd.Token != "" {
+		platforms = append(platforms, "bugcrowd")
+	}
+	if tokens.Intigriti.Token != "" {
+		platforms = append(platforms, "intigriti")
+	}
+	if tokens.YesWeHack.Token != "" {
+		platforms = append(platforms, "yeswehack")
+	}
+
+	if len(platforms) == 0 {
+		return "", fmt.Errorf("nenhuma plataforma configurada em tokens.json")
+	}
+
 	fmt.Println("\n=== Selecionar Plataforma ===")
 	for i, p := range platforms {
 		fmt.Printf("%d) %s\n", i+1, p)
@@ -125,32 +170,24 @@ func selectPlatform() (string, error) {
 	}
 	input = strings.TrimSpace(input)
 
-	switch input {
-	case "1":
-		return platforms[0], nil
-	case "2":
-		return platforms[1], nil
-	case "3":
-		return platforms[2], nil
-	case "4":
-		return platforms[3], nil
-	case "0":
-		return "", nil
-	default:
+	choice, err := strconv.Atoi(input)
+	if err != nil || choice < 0 || choice > len(platforms) {
 		return "", fmt.Errorf("opção inválida")
 	}
+	if choice == 0 {
+		return "", nil
+	}
+	return platforms[choice-1], nil
 }
 
 // showScopes consulta e exibe os escopos disponíveis para uma plataforma
 func showScopes(platform string) error {
-	// Conectar ao banco de dados
 	db, err := db_manager_main.connectDB()
 	if err != nil {
 		return fmt.Errorf("erro ao conectar ao banco de dados: %w", err)
 	}
 	defer db.Close()
 
-	// Consulta SQL para buscar escopos
 	query := "SELECT scope FROM scopes WHERE platform = $1"
 	rows, err := db.Query(query, platform)
 	if err != nil {
@@ -158,7 +195,6 @@ func showScopes(platform string) error {
 	}
 	defer rows.Close()
 
-	// Exibir resultados
 	fmt.Printf("\n=== Escopos disponíveis para %s ===\n", platform)
 	count := 0
 	for rows.Next() {

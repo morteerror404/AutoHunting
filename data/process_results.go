@@ -1,4 +1,4 @@
-package main
+package data_manager
 
 import (
     "bufio"

@@ -1,4 +1,4 @@
-package cleaner_main
+package data_manager
 
 import (
 	"bufio"
@@ -102,4 +102,4 @@ func cleanFile(filename string, templateName string) error {
 	return nil
 }
 
-// func cleaner_main() { ... } (A mesma função cleaner_main de teste)
+// func data_manager() { ... } (A mesma função data_manager de teste)
