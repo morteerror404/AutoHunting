@@ -8,11 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/usuario/bug-hunt/api"
-	"github.com/usuario/bug-hunt/data/cleaner"
-	"github.com/usuario/bug-hunt/data/db"
-	"github.com/usuario/bug-hunt/data/runner"
-	"github.com/usuario/bug-hunt/utils"
 )
 
 type Config struct {
