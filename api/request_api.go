@@ -4,16 +4,17 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
-	"golang.org/x/net/html" // Adicionado ao go.mod
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/net/html" // Adicionado ao go.mod
 )
 
 // -----------------------------
@@ -33,7 +34,7 @@ type SiteResult struct {
 // -----------------------------
 // Estrutura para tokens.json
 // -----------------------------
-type APIConfig struct {
+type Tokens struct {
 	HackerOne struct {
 		Username string `json:"username"`
 		ApiKey   string `json:"api_key"`
@@ -161,140 +162,6 @@ func worker(id int, jobs <-chan string, results chan<- SiteResult, client *http.
 }
 
 // -----------------------------
-// APIs de Bug Bounty
-// -----------------------------
-
-// HackerOne
-func fetchHackerOneScopes(username, apiKey string) ([]string, error) {
-	client := &http.Client{Timeout: 15 * time.Second}
-	req, _ := http.NewRequest("GET", "https://api.hackerone.com/v1/hackers/programs", nil)
-	req.SetBasicAuth(username, apiKey)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("HackerOne status code %d", resp.StatusCode)
-	}
-
-	var data struct {
-		Data []struct {
-			Attributes struct {
-				Handle string `json:"handle"`
-			} `json:"attributes"`
-		} `json:"data"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, err
-	}
-
-	var targets []string
-	for _, prog := range data.Data {
-		if prog.Attributes.Handle != "" {
-			targets = append(targets, fmt.Sprintf("%s.hackerone.com", prog.Attributes.Handle))
-		}
-	}
-	return targets, nil
-}
-
-// Bugcrowd
-func fetchBugcrowdScopes(token string) ([]string, error) {
-	client := &http.Client{Timeout: 15 * time.Second}
-	req, _ := http.NewRequest("GET", "https://api.bugcrowd.com/v2/programs", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("Bugcrowd status code %d", resp.StatusCode)
-	}
-
-	var data struct {
-		Programs []struct {
-			Name   string   `json:"name"`
-			Scopes []string `json:"targets"` // depende da API real
-		} `json:"programs"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, err
-	}
-
-	var targets []string
-	for _, p := range data.Programs {
-		targets = append(targets, p.Scopes...)
-	}
-	return targets, nil
-}
-
-// Intigriti
-func fetchIntigritiScopes(token string) ([]string, error) {
-	client := &http.Client{Timeout: 15 * time.Second}
-	req, _ := http.NewRequest("GET", "https://api.intigriti.com/v1/programs", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 { return nil, fmt.Errorf("Intigriti status code %d", resp.StatusCode) }
-
-	var data struct {
-		Programs []struct {
-			Name   string   `json:"name"`
-			Scopes []string `json:"targets"` // ajuste conforme API real
-		} `json:"programs"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil { return nil, err }
-
-	var targets []string
-	for _, p := range data.Programs {
-		targets = append(targets, p.Scopes...)
-	}
-	return targets, nil
-}
-
-// YesWeHack
-func fetchYesWeHackScopes(token string) ([]string, error) {
-	client := &http.Client{Timeout: 15 * time.Second}
-	req, _ := http.NewRequest("GET", "https://api.yeswehack.com/api/v1/programs", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := client.Do(req)
-	if err != nil { return nil, err }
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 { return nil, fmt.Errorf("YesWeHack status code %d", resp.StatusCode) }
-
-	var data struct {
-		Programs []struct {
-			Name   string   `json:"name"`
-			Scopes []string `json:"targets"` // ajuste conforme API real
-		} `json:"programs"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil { return nil, err }
-
-	var targets []string
-	for _, p := range data.Programs {
-		targets = append(targets, p.Scopes...)
-	}
-	return targets, nil
-}
-
-// -----------------------------
 // HackerOne: programas ativos + structured scopes
 // -----------------------------
 
@@ -356,10 +223,10 @@ func fetchHackerOneStructuredScopes(handle, username, apiKey string) ([]string, 
 	var data struct {
 		Data []struct {
 			Attributes struct {
-				Identifier              string `json:"identifier"`
-				EligibleForSubmission   bool   `json:"eligible_for_submission"`
-				EligibleForBounty       bool   `json:"eligible_for_bounty"`
-				AssetType               string `json:"asset_type"`
+				Identifier            string `json:"identifier"`
+				EligibleForSubmission bool   `json:"eligible_for_submission"`
+				EligibleForBounty     bool   `json:"eligible_for_bounty"`
+				AssetType             string `json:"asset_type"`
 			} `json:"attributes"`
 		} `json:"data"`
 	}
@@ -379,12 +246,9 @@ func fetchHackerOneStructuredScopes(handle, username, apiKey string) ([]string, 
 			out = append(out, attr.Identifier)
 			continue
 		}
-		// filtrar por tipos úteis (Doapi
-	
-		//, Url, Cidr)
-		if strings.Contains(strings.ToLower(attr.AssetType), "doapi
-	
-	") || strings.Contains(strings.ToLower(attr.AssetType), "url") || strings.Contains(strings.ToLower(attr.AssetType), "cidr") {
+		// filtrar por tipos úteis (Domain, Url, Cidr)
+		assetTypeLower := strings.ToLower(attr.AssetType)
+		if strings.Contains(assetTypeLower, "domain") || strings.Contains(assetTypeLower, "url") || strings.Contains(assetTypeLower, "cidr") {
 			out = append(out, attr.Identifier)
 		}
 	}
@@ -400,245 +264,87 @@ func writeLinesToFile(path string, lines []string) error {
 	defer f.Close()
 	w := bufio.NewWriter(f)
 	for _, l := range lines {
-		if strings.TrimSpace(l) == "" { continue }
-		if _, err := w.WriteString(l + "\n"); err != nil { return err }
+		if strings.TrimSpace(l) == "" {
+			continue
+		}
+		if _, err := w.WriteString(l + "\n"); err != nil {
+			return err
+		}
 	}
 	return w.Flush()
 }
 
-// -----------------------------
-// getScopes: coleta escopos por plataforma, escreve em arquivos separados e imprime status sucinto
-// -----------------------------
-func getScopes(h1User, h1Key, bcToken, intToken, ywhToken string) {
-	// armazenar comandos/endpoints/headers em variáveis (maior parte das informações do "comando")
-	h1Endpoint := "https://api.hackerone.com/v1/hackers/programs"
-	h1Structured := "https://api.hackerone.com/v1/hackers/programs/%s/structured_scopes"
-	h1Auth := fmt.Sprintf("%s:%s", h1User, h1Key)
-
-	bcEndpoint := "https://api.bugcrowd.com/v2/programs"
-	bcAuth := fmt.Sprintf("Bearer %s", bcToken)
-
-	intEndpoint := "https://api.intigriti.com/v1/programs"
-	intAuth := fmt.Sprintf("Bearer %s", intToken)
-
-	ywhEndpoint := "https://api.yeswehack.com/api/v1/programs"
-	ywhAuth := fmt.Sprintf("Bearer %s", ywhToken)
-
-	// HackerOne
-	if h1User != "" && h1Key != "" {
-		fmt.Fprintf(os.Stderr, "[hackerone] buscando handles...\n")
-		handles, err := fetchHackerOneProgramHandles(h1User, h1Key)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "[hackerone] erro: %v\n", err)
-		} else {
-			// salvar handles
-			if err := writeLinesRotate("hackerone_programs.txt", handles); err != nil { fmt.Fprintf(os.Stderr, "[hackerone] erro salvando handles: %v\n", err) }
-			fmt.Printf("[hackerone] handles: %d\n", len(handles))
-			// para cada handle, buscar structured scopes e agregar
-			var allScopes []string
-			for _, h := range handles {
-				scopes, err := fetchHackerOneStructuredScopes(h, h1User, h1Key)
-				if err != nil {
-					// log sucinto
-					fmt.Fprintf(os.Stderr, "[hackerone] %s -> err\n", h)
-					continue
-				}
-				allScopes = append(allScopes, scopes...)
+// writeLinesRotate renomeia o arquivo existente para <basename>-old.txt e cria um novo.
+func writeLinesRotate(path string, lines []string) error {
+	if _, err := os.Stat(path); err == nil {
+		ext := filepath.Ext(path)
+		oldPath := strings.TrimSuffix(path, ext) + "-old" + ext
+		if _, err := os.Stat(oldPath); err == nil {
+			if err := os.Remove(oldPath); err != nil {
+				return fmt.Errorf("erro removendo arquivo antigo %s: %w", oldPath, err)
 			}
-			if err := writeLinesRotate("hackerone_scopes.txt", allScopes); err != nil { fmt.Fprintf(os.Stderr, "[hackerone] erro salvando scopes: %v\n", err) }
-			fmt.Printf("[hackerone] scopes colhidos: %d (arquivo: hackerone_scopes.txt)\n", len(allScopes))
-			// (opcional) imprimir endpoints usados de forma sucinta
-			_ = h1Endpoint
-			_ = h1Structured
-			_ = h1Auth
+		}
+		if err := os.Rename(path, oldPath); err != nil {
+			return fmt.Errorf("erro renomeando %s para %s: %w", path, oldPath, err)
 		}
 	}
-	
-		// Bugcrowd
-		if bcToken != "" {
-			fmt.Fprintf(os.Stderr, "[bugcrowd] consultando API...\n")
-			s, err := fetchBugcrowdScopes(bcToken)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "[bugcrowd] erro: %v\n", err)
-			} else {
-				if err := writeLinesRotate("bugcrowd_scopes.txt", s); err != nil { fmt.Fprintf(os.Stderr, "[bugcrowd] erro salvando scopes: %v\n", err) }
-				fmt.Printf("[bugcrowd] scopes colhidos: %d (arquivo: bugcrowd_scopes.txt)\n", len(s))
-				_ = bcEndpoint
-				_ = bcAuth
-			}
-		}
-	
-		// Intigriti
-		if intToken != "" {
-			fmt.Fprintf(os.Stderr, "[intigriti] consultando API...\n")
-			s, err := fetchIntigritiScopes(intToken)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "[intigriti] erro: %v\n", err)
-			} else {
-				if err := writeLinesRotate("intigriti_scopes.txt", s); err != nil { fmt.Fprintf(os.Stderr, "[intigriti] erro salvando scopes: %v\n", err) }
-				fmt.Printf("[intigriti] scopes colhidos: %d (arquivo: intigriti_scopes.txt)\n", len(s))
-				_ = intEndpoint
-				_ = intAuth
-			}
-		}
-	
-		// YesWeHack
-		if ywhToken != "" {
-			fmt.Fprintf(os.Stderr, "[yeswehack] consultando API...\n")
-			s, err := fetchYesWeHackScopes(ywhToken)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "[yeswehack] erro: %v\n", err)
-			} else {
-				if err := writeLinesRotate("yeswehack_scopes.txt", s); err != nil { fmt.Fprintf(os.Stderr, "[yeswehack] erro salvando scopes: %v\n", err) }
-				fmt.Printf("[yeswehack] scopes colhidos: %d (arquivo: yeswehack_scopes.txt)\n", len(s))
-				_ = ywhEndpoint
-				_ = ywhAuth
-			}
-		}
-
-	// breve resumo final
-	fmt.Fprintln(os.Stderr, "[getScopes] coleta finalizada")
+	return writeLinesToFile(path, lines)
 }
 
-// -----------------------------
-// api
-// -----------------------------
-func api() {
-	// flags
-	h1User := flag.String("h1-user", "", "HackerOne username")
-	h1Key := flag.String("h1-key", "", "HackerOne API key")
-	bcToken := flag.String("bc-token", "", "Bugcrowd API token")
-	intToken := flag.String("int-token", "", "Intigriti API token")
-	ywhToken := flag.String("ywh-token", "", "YesWeHack API token")
+// RunRequestAPI é o ponto de entrada para o maestro.
+// Ele busca escopos para uma plataforma específica e os salva em um arquivo.
+func RunRequestAPI(apiDirtResultsPath string, platform string, tokens Tokens) error {
+	var allScopes []string
+	var err error
 
-	fileFlag := flag.String("file", "", "Arquivo com uma URL por linha")
-	concurrency := flag.Int("concurrency", 5, "Número de workers concorrentes")
-	timeoutSec := flag.Int("timeout", 15, "Timeout por request (segundos)")
-	delayMS := flag.Int("delay", 300, "Delay entre requests por worker (ms)")
-	path := flag.String("path", "", "Caminho a anexar a cada host")
-	outFile := flag.String("out", "results.json", "Arquivo de saída JSON")
-	flag.Parse()
-
-	// tentar carregar tokens.json se existir
-	var apiCfg APIConfig
-	if data, err := os.ReadFile("./json/tokens.json"); err == nil {
-		if err := json.Unmarshal(data, &apiCfg); err != nil {
-			fmt.Fprintf(os.Stderr, "erro parseando tokens.json: %v\n", err)
-		} else {
-			fmt.Fprintf(os.Stderr, "[info] tokens.json carregado\n")
+	switch platform {
+	case "hackerone":
+		if tokens.HackerOne.Username == "" || tokens.HackerOne.ApiKey == "" {
+			return fmt.Errorf("credenciais do HackerOne não fornecidas")
 		}
-	} else {
-		// arquivo não existe; não é um erro
-		fmt.Fprintf(os.Stderr, "[info] tokens.json não encontrado, usando flags\n")
-	}
-
-	var targets []string
-
-	// Targets via arquivo
-	if *fileFlag != "" {
-		f, err := os.Open(*fileFlag)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "erro abrindo arquivo %s: %v\n", *fileFlag, err)
-			os.Exit(1)
+		fmt.Fprintf(os.Stderr, "[hackerone] buscando handles de programas...\n")
+		handles, errH := fetchHackerOneProgramHandles(tokens.HackerOne.Username, tokens.HackerOne.ApiKey)
+		if errH != nil {
+			return fmt.Errorf("erro ao buscar handles do HackerOne: %w", errH)
 		}
-		scanner := bufio.NewScanner(f)
-		for scanner.Scan() {
-			line := strings.TrimSpace(scanner.Text())
-			if line != "" && !strings.HasPrefix(line, "#") {
-				targets = append(targets, line)
+		fmt.Fprintf(os.Stderr, "[hackerone] %d handles encontrados. buscando escopos...\n", len(handles))
+
+		for _, h := range handles {
+			scopes, errS := fetchHackerOneStructuredScopes(h, tokens.HackerOne.Username, tokens.HackerOne.ApiKey)
+			if errS != nil {
+				fmt.Fprintf(os.Stderr, "[hackerone] AVISO: falha ao buscar escopos para o handle '%s': %v\n", h, errS)
+				continue // Continua para o próximo handle
 			}
+			allScopes = append(allScopes, scopes...)
 		}
-		f.Close()
+
+	// Adicione casos para 'bugcrowd', 'intigriti', 'yeswehack' aqui quando as funções de fetch forem implementadas.
+	// case "bugcrowd":
+	// 	// allScopes, err = fetchBugcrowdScopes(tokens.Bugcrowd.Token)
+
+	default:
+		return fmt.Errorf("plataforma '%s' não suportada para coleta de API", platform)
 	}
 
-	// decidir credenciais: flags > tokens.json
-	h1UserVal := *h1User
-	h1KeyVal := *h1Key
-	if h1UserVal == "" && apiCfg.HackerOne.Username != "" {
-		h1UserVal = apiCfg.HackerOne.Username
-	}
-	if h1KeyVal == "" && apiCfg.HackerOne.ApiKey != "" {
-		h1KeyVal = apiCfg.HackerOne.ApiKey
-	}
-
-	bcTokenVal := *bcToken
-	if bcTokenVal == "" && apiCfg.Bugcrowd.Token != "" {
-		bcTokenVal = apiCfg.Bugcrowd.Token
-	}
-
-	intTokenVal := *intToken
-	if intTokenVal == "" && apiCfg.Intigriti.Token != "" {
-		intTokenVal = apiCfg.Intigriti.Token
-	}
-
-	ywhTokenVal := *ywhToken
-	if ywhTokenVal == "" && apiCfg.YesWeHack.Token != "" {
-		ywhTokenVal = apiCfg.YesWeHack.Token
-	}
-
-	// Targets via APIs
-	if h1UserVal != "" && h1KeyVal != "" {
-		if t, err := fetchHackerOneScopes(h1UserVal, h1KeyVal); err == nil {
-			targets = append(targets, t...)
-		} else {
-			fmt.Fprintf(os.Stderr, "HackerOne: %v\n", err)
-		}
-	}
-	if bcTokenVal != "" {
-		if t, err := fetchBugcrowdScopes(bcTokenVal); err == nil { targets = append(targets, t...) } else { fmt.Fprintf(os.Stderr, "Bugcrowd: %v\n", err) }
-	}
-	if intTokenVal != "" {
-		if t, err := fetchIntigritiScopes(intTokenVal); err == nil { targets = append(targets, t...) } else { fmt.Fprintf(os.Stderr, "Intigriti: %v\n", err) }
-	}
-	if ywhTokenVal != "" {
-		if t, err := fetchYesWeHackScopes(ywhTokenVal); err == nil { targets = append(targets, t...) } else { fmt.Fprintf(os.Stderr, "YesWeHack: %v\n", err) }
-	}
-
-	if len(targets) == 0 {
-		fmt.Println("[warn] nenhum target definido; finalize a execução passando tokens ou arquivo com URLs")
-		os.Exit(0)
-	}
-
-	// Client HTTP
-	client := &http.Client{Timeout: time.Duration(*timeoutSec) * time.Second}
-
-	jobs := make(chan string, len(targets))
-	resultsCh := make(chan SiteResult, len(targets))
-	var wg sync.WaitGroup
-	delay := time.Duration(*delayMS) * time.Millisecond
-
-	// start workers
-	for i := 0; i < *concurrency; i++ {
-		wg.Add(1)
-		go worker(i+1, jobs, resultsCh, client, *path, delay, &wg)
-	}
-
-	for _, t := range targets { jobs <- t }
-	close(jobs)
-
-	go func() { wg.Wait(); close(resultsCh) }()
-
-	var all []SiteResult
-	for r := range resultsCh {
-		if r.Error != "" {
-			fmt.Printf("ERR  %-30s -> %s\n", r.Input, r.Error)
-		} else {
-			fmt.Printf("OK   %-30s -> %d  title=\"%s\"\n", r.Input, r.HTTPStatus, truncate(r.Title, 60))
-		}
-		all = append(all, r)
-	}
-
-	// salvar JSON
-	fout, err := os.Create(*outFile)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "erro criando %s: %v\n", *outFile, err)
-		os.Exit(1)
+		return fmt.Errorf("erro ao buscar escopos para a plataforma '%s': %w", platform, err)
 	}
-	enc := json.NewEncoder(fout)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(all); err != nil {
-		fmt.Fprintf(os.Stderr, "erro escrevendo json: %v\n", err)
+
+	if len(allScopes) == 0 {
+		fmt.Fprintf(os.Stderr, "AVISO: Nenhum escopo encontrado para a plataforma '%s'.\n", platform)
+		return nil // Não é um erro fatal, mas nada foi encontrado.
 	}
-	fout.Close()
-	fmt.Printf("[done] resultados salvos em %s\n", *outFile)
+
+	// Garante que o diretório de saída exista
+	if err := os.MkdirAll(filepath.Dir(apiDirtResultsPath), 0755); err != nil {
+		return fmt.Errorf("erro ao criar diretório de saída '%s': %w", filepath.Dir(apiDirtResultsPath), err)
+	}
+
+	// Salva os escopos no arquivo de resultados brutos especificado pelo maestro
+	if err := writeLinesToFile(apiDirtResultsPath, allScopes); err != nil {
+		return fmt.Errorf("erro ao salvar escopos em '%s': %w", apiDirtResultsPath, err)
+	}
+
+	fmt.Printf("Sucesso! %d escopos da plataforma '%s' salvos em: %s\n", len(allScopes), platform, apiDirtResultsPath)
+	return nil
 }
