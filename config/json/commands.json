@@ -7,10 +7,30 @@
         "nmap_steath": {
             "args": "-sF -Pn --scan-delay 1000ms -f --mtu 24 -D RND:5,ME -p 80,443",
             "comment": "Scan furtivo (FIN) para portas 80 e 443 com ofuscação e sem ping. Ex: nmap -sF ... {TARGET}"
+        },
+        "nmap_fast": {
+            "args": "-T4 -F",
+            "comment": "Scan rápido nas 100 portas mais comuns. Ex: nmap -T4 -F {TARGET}"
+        },
+        "nmap_udp": {
+            "args": "-sU --top-ports 20",
+            "comment": "Scan das 20 portas UDP mais comuns. Ex: nmap -sU --top-ports 20 {TARGET}"
+        },
+        "nmap_vuln_scripts": {
+            "args": "--script vuln",
+            "comment": "Executa scripts da categoria 'vuln' para detectar vulnerabilidades conhecidas. Ex: nmap --script vuln {TARGET}"
+        },
+        "nmap_full_vuln_scan": {
+            "args": "-vvv -O -sV -sS -T4 -A -sC --webxml --stylesheet https://raw.githubusercontent.com/honze-net/nmap-bootstrap-xsl/master/nmap-bootstrap.xsl --dns-servers 1.1.1.1,1.0.0.1,9.9.9.9,149.112.112.112,8.8.8.8,8.8.4.4 --script afp-path-vuln,broadcast-avahi-dos,clamav-exec,distcc-cve2004-2687,dns-update,firewall-bypass,ftp-libopie,ftp-proftpd-backdoor,ftp-vsftpd-backdoor,ftp-vuln-cve2010-4221,http-adobe-coldfusion-apsa1301,http-aspnet-debug,http-avaya-ipoffice-users,http-awstatstotals-exec,http-axis2-dir-traversal,http-cookie-flags,http-cross-domain-policy,http-csrf,http-dlink-backdoor,http-dombased-xss,http-enum,http-fileupload-exploiter,http-frontpage-login,http-git,http-huawei-hg5xx-vuln,http-iis-webdav-vuln,http-internal-ip-disclosure,http-jsonp-detection,http-litespeed-sourcecode-download,http-majordomo2-dir-traversal,http-method-tamper,http-passwd,http-phpmyadmin-dir-traversal,http-phpself-xss,http-shellshock,http-slowloris-check,http-sql-injection,http-stored-xss,http-tplink-dir-traversal,http-trace,http-vmware-path-vuln,http-vuln-cve2006-3392,http-vuln-cve2009-3960,http-vuln-cve2010-0738,http-vuln-cve2010-2861,http-vuln-cve2011-3192,http-vuln-cve2011-3368,http-vuln-cve2012-1823,http-vuln-cve2013-0156,http-vuln-cve2013-6786,http-vuln-cve2013-7091,http-vuln-cve2014-2126,http-vuln-cve2014-2127,http-vuln-cve2014-2128,http-vuln-cve2014-2129,http-vuln-cve2014-3704,http-vuln-cve2014-8877,http-vuln-cve2015-1427,http-vuln-cve2015-1635,http-vuln-cve2017-1001000,http-vuln-cve2017-5638,http-vuln-cve2017-5689,http-vuln-cve2017-8917,http-vuln-misfortune-cookie,http-vuln-wnr1000-creds,http-wordpress-users,ipmi-cipher-zero,irc-botnet-channels,irc-unrealircd-backdoor,mysql-vuln-cve2012-2122,netbus-auth-bypass,puppet-naivesigning,qconn-exec,rdp-vuln-ms12-020,realvnc-auth-bypass,rmi-vuln-classloader,rsa-vuln-roca,samba-vuln-cve-2012-1182,smb-double-pulsar-backdoor,smb-vuln-conficker,smb-vuln-cve-2017-7494,smb-vuln-cve2009-3103,smb-vuln-ms06-025,smb-vuln-ms07-029,smb-vuln-ms08-067,smb-vuln-ms10-054,smb-vuln-ms10-061,smb-vuln-ms17-010,smb-vuln-regsvc-dos,smb-vuln-webexec,smb2-vuln-uptime,smtp-vuln-cve2010-4344,smtp-vuln-cve2011-1720,smtp-vuln-cve2011-1764,ssl-ccs-injection,ssl-cert-intaddr,ssl-dh-params,ssl-heartbleed,ssl-known-key,ssl-poodle,sslv2-drown,supermicro-ipmi-conf,tls-ticketbleed,vulners",
+            "comment": "Scan Nmap completo com detecção de OS, serviços, scripts de vulnerabilidade e relatório HTML. Ex: nmap ... {TARGET}"
+        },
+        "nmap_aggressive_html_report": {
+            "args": "-vvv -O -Pn -sV -sS -T4 -A -sC --dns-servers 1.1.1.1,1.0.0.1,9.9.9.9,149.112.112.112,8.8.8.8,8.8.4.4 --stylesheet https://raw.githubusercontent.com/honze-net/nmap-bootstrap-xsl/master/nmap-bootstrap.xsl",
+            "comment": "Scan agressivo com detecção de OS/serviço, scripts padrão e relatório HTML estilizado. O runner deve adicionar a flag de saída, como -oA. Ex: nmap ... -oA output {TARGET}"
         }
     },
     "ffuf":{
-        "common_dir": {
+        "dir_fuzz": {
             "args": "-u http://{TARGET}/FUZZ -w {WORDLIST_PATH}",
             "comment": "Fuzzing de diretórios em um alvo HTTP. Ex: ffuf -u http://example.com/FUZZ -w list.txt"
         }
@@ -55,6 +75,10 @@
         "detect_verbose": {
             "args": "detect --source {SOURCE_PATH} -v --no-banner",
             "comment": "Detecta segredos em um caminho específico com saída detalhada."
+        },
+        "detect_repo": {
+            "args": "detect --repo-url {REPO_URL} -f json -r {REPORT_PATH} --no-banner --redact",
+            "comment": "Escaneia um repositório Git remoto em busca de segredos. Ex: gitleaks detect --repo-url https://github.com/user/repo"
         }
     },
     "theHarvester": {
@@ -67,6 +91,10 @@
         "enum": {
             "args": "enum -d {TARGET}",
             "comment": "Enumeração passiva e ativa de subdomínios para um alvo."
+        },
+        "enum_active": {
+            "args": "enum -active -d {TARGET}",
+            "comment": "Enumeração ativa de subdomínios, realizando resolução DNS e outras checagens. Ex: amass enum -active -d example.com"
         }
     },
     "spiderfoot": {
@@ -129,6 +157,10 @@
         "domain_enum": {
             "args": "-d {TARGET}",
             "comment": "Enumera subdomínios para um domínio alvo. Ex: subfinder -d example.com"
+        },
+        "domain_enum_all_sources": {
+            "args": "-d {TARGET} -all",
+            "comment": "Enumera subdomínios usando todas as fontes de dados disponíveis. Ex: subfinder -d example.com -all"
         }
     },
     "nuclei": {
@@ -139,12 +171,20 @@
         "scan_list": {
             "args": "-l {TARGET_LIST} -o {OUTPUT_FILE}",
             "comment": "Executa templates do Nuclei contra uma lista de URLs. Ex: nuclei -l urls.txt -o nuclei_results.txt"
+        },
+        "scan_custom_templates": {
+            "args": "-u {TARGET} -t {TEMPLATE_DIR}",
+            "comment": "Executa templates de um diretório customizado contra um alvo. Ex: nuclei -u http://test.com -t /path/to/templates"
         }
     },
     "httpx": {
         "probe_list": {
             "args": "-json -o {OUTPUT_FILE}",
             "comment": "Verifica quais hosts de uma lista estão ativos e retorna em JSON. Ex: cat hosts.txt | httpx -json -o live_hosts.json"
+        },
+        "probe_extract": {
+            "args": "-sc -title -cl -o {OUTPUT_FILE}",
+            "comment": "Verifica hosts e extrai status code, título e content length. Ex: cat hosts.txt | httpx -sc -title -cl -o extracted.txt"
         }
     },
     "assetfinder": {
@@ -169,6 +209,10 @@
         "dir_bruteforce": {
             "args": "dir -u {URL} -w {WORDLIST_PATH}",
             "comment": "Força bruta de diretórios em uma URL. Ex: gobuster dir -u http://example.com -w common.txt"
+        },
+        "dns_bruteforce": {
+            "args": "dns -d {TARGET} -w {WORDLIST_PATH}",
+            "comment": "Força bruta de subdomínios usando DNS. Ex: gobuster dns -d example.com -w subdomains.txt"
         }
     },
     "dalfox": {
@@ -205,6 +249,10 @@
         "crawl": {
             "args": "-u {URL} -d 5",
             "comment": "Faz o crawling de um site com profundidade 5. Ex: katana -u http://example.com -d 5"
+        },
+        "crawl_json": {
+            "args": "-u {URL} -d 5 -json",
+            "comment": "Faz o crawling de um site e salva a saída em formato JSON. Ex: katana -u http://example.com -d 5 -json"
         }
     },
     "reconftw": {
@@ -247,6 +295,10 @@
         "scan_url": {
             "args": "-u {URL}",
             "comment": "Escaneia uma URL em busca de vulnerabilidades LFI/RFI. Ex: fimap -u 'http://test.com/page.php?file=1'"
+        },
+        "scan_from_request_file": {
+            "args": "-r {REQUEST_FILE} --batch --level=5 --risk=3",
+            "comment": "Escaneia uma requisição HTTP salva em um arquivo. Ex: sqlmap -r request.txt --batch"
         }
     },
     "cmseek": {
