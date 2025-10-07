@@ -1,11 +1,11 @@
 {
     "config_db": {
-    "host": "localhost",
-    "port": 5432,
-    "user": "postgres",
-    "password": "minha_senha",
-    "dbname": "bug_hunt_db",
-    "path": "data.db"
+        "type": "postgres",
+        "host": "localhost",
+        "port": 5432,
+        "user": "postgres",
+        "password": "minha_senha",
+        "dbname": "bug_hunt_db"
     },    
     "commands": {
         "postgres": {
@@ -14,13 +14,13 @@
             "insert_info": "INSERT INTO bugs (name, details) VALUES ($1, $2)",
             "select_info": "SELECT id, name, details FROM bugs"
         },
-        "sql_lite": {
+        "sqlite3": {
             "create_table": "CREATE TABLE IF NOT EXISTS bugs (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, details TEXT)",
             "exclude_table": "DROP TABLE IF EXISTS bugs",
             "insert_info": "INSERT INTO bugs (name, details) VALUES (?, ?)",
             "select_info": "SELECT id, name, details FROM bugs"
         },
-        "maria_db": {
+        "mariadb": {
             "create_table": "CREATE TABLE IF NOT EXISTS bugs (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255), details TEXT)",
             "exclude_table": "DROP TABLE IF EXISTS bugs",
             "insert_info": "INSERT INTO bugs (name, details) VALUES (?, ?)",
@@ -32,11 +32,11 @@
             "insert_info": "INSERT INTO bugs (name, details) VALUES (?, ?)",
             "select_info": "SELECT id, name, details FROM bugs"
         },
-        "mongo": {
-            "create_table": "{ createCollection: 'bugs' }",
-            "exclude_table": "{ dropCollection: 'bugs' }",
-            "insert_info": "{ insertOne: { document: { name: '%s', details: '%s' } } }",
-            "select_info": "{ find: {} }"
+        "mongodb": {
+            "create_table": "{\"create\": \"bugs\"}",
+            "exclude_table": "{\"drop\": \"bugs\"}",
+            "insert_info": "{\"insert\": \"bugs\", \"documents\": [{\"name\": \"%s\", \"details\": \"%s\"}]}",
+            "select_info": "{\"find\": \"bugs\", \"filter\": {}}"
         }
     }
 }
