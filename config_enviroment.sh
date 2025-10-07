@@ -30,14 +30,16 @@ MENU_TYPE=""
 # =============================
 # Funções de verificação
 # =============================
+log() {
+    # Função de log simples, pode ser expandida se necessário.
+    echo "[$1] $2"
+}
 
 verifica_root() {
     if [ "$(id -u)" -ne 0 ] && [ -z "${SUDO_USER:-}" ]; then
-        log "ERROR" "Erro: Execute como root (sudo)!"
         echo -e "${RED}Erro: Execute como root (sudo)!${NC}"
         exit 1
     fi
-    log "INFO" "Permissões ok (root or sudo)."
 }
 
 show_menu_principal() {
@@ -85,6 +87,52 @@ show_menu_servicos() {
     echo
 }
 
+# ===============================
+# Funções de Lógica
+# ===============================
+
+configurar_servico_db() {
+    verifica_root
+
+    if ! command -v systemctl &> /dev/null; then
+        echo -e "${RED}Erro: O comando 'systemctl' não foi encontrado. Este recurso está disponível apenas em sistemas com systemd.${NC}"
+        return 1
+    fi
+
+    local marker_dir="/var/lib/autohunt/markers"
+    local db_service=""
+
+    # Detecta o serviço do banco de dados com base nos arquivos de marcador
+    if ls "$marker_dir"/bughunt.postgresql.marker* 1> /dev/null 2>&1; then
+        db_service="postgresql"
+    elif ls "$marker_dir"/bughunt.mariadb.marker* 1> /dev/null 2>&1; then
+        db_service="mariadb"
+    elif ls "$marker_dir"/bughunt.mysql.marker* 1> /dev/null 2>&1; then
+        db_service="mysql"
+    elif ls "$marker_dir"/bughunt.mongodb.marker* 1> /dev/null 2>&1; then
+        db_service="mongod" # O nome do serviço geralmente é 'mongod'
+    else
+        echo -e "${YELLOW}Aviso: Nenhum banco de dados configurado pelo 'db_config.sh' foi detectado.${NC}"
+        echo -e "Por favor, execute o script 'db_config.sh' primeiro."
+        return 1
+    fi
+
+    echo -e "[*] Banco de dados detectado: ${BOLD}${db_service}${NC}"
+
+    echo -e "[*] Habilitando o serviço '${db_service}' para iniciar com o sistema..."
+    if systemctl enable "${db_service}.service"; then
+        echo -e "${GREEN}Serviço habilitado com sucesso.${NC}"
+    else
+        echo -e "${RED}Falha ao habilitar o serviço.${NC}"
+    fi
+
+    echo -e "[*] Iniciando o serviço '${db_service}'..."
+    if systemctl start "${db_service}.service"; then
+        echo -e "${GREEN}Serviço iniciado com sucesso.${NC}"
+    else
+        echo -e "${RED}Falha ao iniciar o serviço.${NC}"
+    fi
+}
 # ===============================
 # LOOP PRINCIPAL DE NAVEGAÇÃO
 # ===============================
@@ -147,7 +195,7 @@ while true; do
                 case $servico_opcao in
                     1)
                         echo -e "\n[*] Configurando serviço para o banco de dados...\n"
-                        # Lógica para configurar o serviço do DB
+                        configurar_servico_db
                         ;;
                     2)
                         echo -e "\n[*] Configurando serviço para rotina específica...\n"

@@ -752,12 +752,6 @@ select_db_menu() {
         echo "3) MongoDB"
         echo "4) PostgreSQL"
 		echo "5) SQLite"
-
-
-
-
-
-
         echo "0) Voltar"
         read -rp "Escolha: " opt
         case "$opt" in
