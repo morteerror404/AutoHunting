@@ -164,6 +164,9 @@ get_install_cmd() {
 pkg_binary_candidates() {
     local pkg="$1"
     case "$pkg" in
+        curl) echo "curl" ;;
+        jq) echo "jq" ;;
+        git) echo "git" ;;
         metasploit) echo "msfconsole" ;;
         wafw00f) echo "wafw00f" ;;
         subfinder) echo "subfinder" ;;
