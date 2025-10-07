@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/morteerror404/AutoHunting/data/db"
-	"github.com/morteerror404/AutoHunting/tail" // Usando uma biblioteca de tail robusta
+	"github.com/hpcloud/tail" //  biblioteca de tail robusta
 	"github.com/morteerror404/AutoHunting/utils"
 )
 

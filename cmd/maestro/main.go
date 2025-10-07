@@ -134,7 +134,7 @@ func runMaestro() error {
 }
 
 func stepRequestAPI(ctx *MaestroContext) error {
-	return api.RunRequestAPI(ctx.Config.Path.APIDirtResultsPath, ctx.Order.Platform, *ctx.Tokens)
+	return api.RunRequestAPI(ctx.Config.Path.APIDirtResultsPath, ctx.Order.Platform, api.Tokens(*ctx.Tokens))
 }
 
 func stepRunScanners(ctx *MaestroContext) error {
