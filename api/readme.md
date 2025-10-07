@@ -13,6 +13,30 @@ Atualmente, a implementação suporta a plataforma **HackerOne**, com uma estrut
 - **Filtragem Inteligente**: Aplica filtros para extrair apenas os ativos que são elegíveis para submissão e recompensa (`eligible_for_submission` e `eligible_for_bounty`), focando nos tipos de ativos mais relevantes para a automação (`URL`, `DOMAIN`, `CIDR`).
 - **Geração de Saída Bruta**: Consolida todos os escopos coletados em um único arquivo de texto (`.txt`), que servirá como fonte de dados "suja" (dirt) para a próxima etapa do pipeline.
 
+## Descrição das Funções
+
+- **`RunRequestAPI(apiDirtResultsPath, platform, tokens)`**
+  - **Propósito**: É o ponto de entrada principal do módulo, orquestrando a coleta de escopos para uma plataforma específica.
+  - **Funcionamento**: Recebe o caminho do arquivo de saída, a plataforma alvo (ex: "hackerone") e as credenciais. Utiliza um `switch` para chamar a lógica de coleta apropriada. Ao final, consolida todos os escopos e os salva no arquivo de saída usando `writeLinesToFile`.
+
+- **`fetchHackerOneProgramHandles(username, apiKey)`**
+  - **Propósito**: Obter a lista de todos os programas públicos disponíveis na HackerOne.
+  - **Funcionamento**: Faz uma requisição autenticada à API `/v1/hackers/programs` do HackerOne. Filtra a resposta para retornar apenas os "handles" (identificadores) de programas com o estado `public_mode`.
+
+- **`fetchHackerOneStructuredScopes(handle, username, apiKey)`**
+  - **Propósito**: Coletar os ativos (escopos) de um programa específico do HackerOne.
+  - **Funcionamento**: Para um `handle` de programa, faz uma requisição autenticada à API `/v1/hackers/programs/{handle}/structured_scopes`. Aplica uma filtragem para retornar apenas os identificadores de ativos que são `eligible_for_submission` (elegíveis para submissão) e `eligible_for_bounty` (elegíveis para recompensa), e que sejam de tipos relevantes (`URL`, `DOMAIN`, `CIDR`).
+
+- **`writeLinesToFile(path, lines)`**
+  - **Propósito**: Função utilitária para persistir os resultados da coleta.
+  - **Funcionamento**: Recebe um caminho de arquivo e uma lista de strings. Cria (ou sobrescreve) o arquivo e escreve cada string em uma nova linha, garantindo que não haja linhas em branco.
+
+- **`Tokens` (struct)**
+  - **Propósito**: Espelha a estrutura do arquivo `tokens.json`.
+  - **Funcionamento**: Permite que o Go decodifique o JSON das credenciais de API em uma estrutura de dados nativa, facilitando o acesso seguro às chaves e tokens necessários para a autenticação.
+
+> **Nota**: As funções `worker`, `SiteResult`, `ensureScheme`, `parseTitle` e `truncate` são remanescentes de uma versão anterior da ferramenta focada em verificação de sites e não são diretamente utilizadas pelo fluxo principal de `RunRequestAPI`, que se concentra apenas na coleta de escopos.
+
 ## Fluxo de Funcionamento
 
 ```txt
