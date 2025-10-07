@@ -120,6 +120,43 @@ update_json_value() {
     echo -e "${GREEN}Arquivo '$file_path' atualizado: '$key_path' definido como '$new_value'.${NC}"
 }
 
+verificar_e_criar_templates_cleaner() {
+    echo -e "\n[*] Verificando e criando arquivos de template do Cleaner..."
+
+    # 1. Obter o caminho para o arquivo principal de templates do cleaner
+    local cleaner_templates_config_path
+    cleaner_templates_config_path=$(jq -r '.archives."cleaner-templates"' "$ENV_JSON_PATH")
+
+    if [ ! -f "$cleaner_templates_config_path" ]; then
+        echo -e "${RED}Erro: Arquivo de configuração de templates do cleaner não encontrado em '$cleaner_templates_config_path'.${NC}"
+        return 1
+    fi
+
+    # 2. Ler o arquivo e extrair todos os caminhos dos templates individuais
+    jq -r '.templates | .[]' "$cleaner_templates_config_path" | while IFS= read -r template_file_path; do
+        if [ -z "$template_file_path" ]; then
+            continue
+        fi
+
+        local template_dir
+        template_dir=$(dirname "$template_file_path")
+
+        # 3. Verificar e criar o diretório
+        if [ ! -d "$template_dir" ]; then
+            echo -e "  ${YELLOW}[CRIANDO DIRETÓRIO]${NC} O diretório '$template_dir' não existe. Criando..."
+            mkdir -p "$template_dir" && echo -e "  ${GREEN}[SUCESSO]${NC} Diretório '$template_dir' criado." || echo -e "  ${RED}[FALHA]${NC} Não foi possível criar o diretório '$template_dir'."
+        fi
+
+        # 4. Verificar e criar o arquivo
+        if [ ! -f "$template_file_path" ]; then
+            echo -e "  ${YELLOW}[CRIANDO ARQUIVO]${NC} O arquivo '$template_file_path' não existe. Criando..."
+            touch "$template_file_path" && echo -e "  ${GREEN}[SUCESSO]${NC} Arquivo '$template_file_path' criado." || echo -e "  ${RED}[FALHA]${NC} Não foi possível criar o arquivo '$template_file_path'."
+        fi
+    done
+
+    echo -e "\nVerificação de templates do Cleaner concluída."
+}
+
 configurar_servico_db() {
     verifica_root
 
@@ -461,7 +498,10 @@ while true; do
                     2) key_to_update="maestro_order_templates" ;;
                     3) key_to_update="commands_json" ;;
                     4) key_to_update="tokens_json" ;;
-                    5) key_to_update="cleaner-templates" ;;
+                    5) 
+                        verificar_e_criar_templates_cleaner
+                        key_to_update="cleaner-templates" 
+                        ;;
                     0) break ;;
                     *) echo -e "\n[!] Opção inválida.\n"; continue ;;
                 esac
