@@ -118,6 +118,17 @@ show_menu_logs() {
     echo
 }
 
+show_menu_logs() {
+    echo -e "\n=== Configuração de Logs ==="
+    echo -e "--------------------------------\n"
+    echo " 1) Definir diretório de logs"
+    echo " 2) Configurar tipo de saída do log (Arquivo/Terminal)"
+    echo " 3) Configurar política de retenção de logs"
+    echo " 0) Voltar"
+    echo
+}
+
+
 # ===============================
 # Funções de Lógica
 # ===============================
@@ -138,6 +149,9 @@ check_and_set_wordlist_dir() {
 
     if [ -n "$current_wordlist_dir" ] && [ -d "$current_wordlist_dir" ]; then
         echo -e "${GREEN}Diretório de wordlists já configurado em: '$current_wordlist_dir'${NC}"
+        # Se o diretório existe, mas o mapa não, ou o mapa está desatualizado, podemos regenerá-lo.
+        # Por simplicidade, vamos regenerar sempre que o diretório for confirmado.
+        generate_wordlist_map_from_dir "$current_wordlist_dir"
         return 0
     fi
 
@@ -147,10 +161,99 @@ check_and_set_wordlist_dir() {
     if [ -n "$new_wordlist_dir" ]; then
         update_json_value "$ENV_JSON_PATH" ".path.wordlist_dir" "$new_wordlist_dir"
         mkdir -p "$new_wordlist_dir" # Garante que o diretório seja criado
+        generate_wordlist_map_from_dir "$new_wordlist_dir" # Gera o mapa após definir o diretório
     fi
 }
 
-update_json_value() {
+# Helper para obter o caminho do arquivo JSON de wordlists
+get_wordlist_map_file_path() {
+    local map_path
+    map_path=$(jq -r '.path.wordlists_map_file' "$ENV_JSON_PATH" 2>/dev/null)
+    if [ "$map_path" = "null" ] || [ -z "$map_path" ]; then
+        # Fallback: se não estiver em env.json, tenta deduzir
+        local wordlist_dir=$(jq -r '.path.wordlist_dir' "$ENV_JSON_PATH" 2>/dev/null)
+        if [ "$wordlist_dir" != "null" ] && [ -n "$wordlist_dir" ]; then
+            echo "$wordlist_dir/autohunting_wordlists_map.json"
+        else
+            echo "" # Não foi possível determinar
+        fi
+    else
+        echo "$map_path"
+    fi
+}
+
+# Adiciona uma wordlist ao JSON de mapa
+add_wordlist_to_map() {
+    local name="$1"
+    local path="$2"
+    local map_file=$(get_wordlist_map_file_path)
+
+    if [ -z "$map_file" ]; then
+        echo -e "${RED}Erro: Não foi possível determinar o caminho do arquivo de mapa de wordlists.${NC}"
+        return 1
+    fi
+
+    if [ ! -f "$ENV_JSON_PATH" ]; then
+        echo -e "${RED}Erro: Arquivo de configuração '$ENV_JSON_PATH' não encontrado.${NC}"
+        return 1
+    fi
+
+    # Garante que o diretório do mapa exista
+    mkdir -p "$(dirname "$map_file")"
+
+    local current_json="{\"wordlists\":[]}"
+    if [ -f "$map_file" ]; then
+        current_json=$(cat "$map_file")
+    fi
+
+    local new_entry=$(jq -n --arg name "$name" --arg path "$path" '{"name": $name, "path": $path}')
+    local updated_json=$(echo "$current_json" | jq --argjson new_entry "$new_entry" '.wordlists |= (. + [$new_entry]) | unique_by(.name)')
+
+    echo "$updated_json" > "$map_file"
+    echo -e "${GREEN}Wordlist '$name' adicionada/atualizada no mapa: $map_file${NC}"
+}
+
+# Gera o mapa de wordlists a partir de um diretório
+generate_wordlist_map_from_dir() {
+    local wordlist_base_dir="$1"
+    local wordlists_map_file=$(get_wordlist_map_file_path)
+
+    if [ -z "$wordlists_map_file" ]; then
+        echo -e "${RED}Erro: Não foi possível determinar o caminho do arquivo de mapa de wordlists.${NC}"
+        return 1
+    fi
+
+    # Garante que o diretório do mapa exista
+    mkdir -p "$(dirname "$wordlists_map_file")"
+
+    local json_output="{\"wordlists\":[]}"
+
+    echo -e "\n[*] Gerando mapa de wordlists em '$wordlists_map_file' a partir de '$wordlist_base_dir'..."
+
+    # Find .txt files and build JSON array
+    find "$wordlist_base_dir" -type f -name "*.txt" -print0 | while IFS= read -r -d '' file; do
+        local name=$(basename "$file" .txt)
+        local escaped_file=$(echo "$file" | sed 's/"/\\"/g') # Escape double quotes in path
+        local escaped_name=$(echo "$name" | sed 's/"/\\"/g') # Escape double quotes in name
+        json_output=$(echo "$json_output" | jq --arg name "$escaped_name" --arg path "$escaped_file" '.wordlists += [{"name": $name, "path": $path}]')
+    done
+
+    # Remove duplicates by name
+    json_output=$(echo "$json_output" | jq '.wordlists |= unique_by(.name)')
+
+    echo "$json_output" > "$wordlists_map_file"
+
+    # Atualiza env.json com o caminho para o arquivo de mapa, se ainda não estiver lá
+    local current_map_path=$(jq -r '.path.wordlists_map_file' "$ENV_JSON_PATH" 2>/dev/null)
+    if [ "$current_map_path" = "null" ] || [ -z "$current_map_path" ] || [ "$current_map_path" != "$wordlists_map_file" ]; then
+        update_json_value "$ENV_JSON_PATH" ".path.wordlists_map_file" "$wordlists_map_file"
+    fi
+
+    echo -e "${GREEN}Mapa de wordlists gerado com sucesso em: $wordlists_map_file${NC}"
+}
+
+
+update_json_value() { # Mantida a função original
     local file_path="$1"
     local key_path="$2"
     local new_value="$3"
@@ -165,43 +268,6 @@ update_json_value() {
     tmp_file=$(mktemp)
     jq --arg key_path "$key_path" --arg new_value "$new_value" 'setpath($key_path | split("."); $new_value)' "$file_path" > "$tmp_file" && mv "$tmp_file" "$file_path"
     echo -e "${GREEN}Arquivo '$file_path' atualizado: '$key_path' definido como '$new_value'.${NC}"
-}
-
-verificar_e_criar_templates_cleaner() {
-    echo -e "\n[*] Verificando e criando arquivos de template do Cleaner..."
-
-    # 1. Obter o caminho para o arquivo principal de templates do cleaner
-    local cleaner_templates_config_path
-    cleaner_templates_config_path=$(jq -r '.archives."cleaner-templates"' "$ENV_JSON_PATH")
-
-    if [ ! -f "$cleaner_templates_config_path" ]; then
-        echo -e "${RED}Erro: Arquivo de configuração de templates do cleaner não encontrado em '$cleaner_templates_config_path'.${NC}"
-        return 1
-    fi
-
-    # 2. Ler o arquivo e extrair todos os caminhos dos templates individuais
-    jq -r '.templates | .[]' "$cleaner_templates_config_path" | while IFS= read -r template_file_path; do
-        if [ -z "$template_file_path" ]; then
-            continue
-        fi
-
-        local template_dir
-        template_dir=$(dirname "$template_file_path")
-
-        # 3. Verificar e criar o diretório
-        if [ ! -d "$template_dir" ]; then
-            echo -e "  ${YELLOW}[CRIANDO DIRETÓRIO]${NC} O diretório '$template_dir' não existe. Criando..."
-            mkdir -p "$template_dir" && echo -e "  ${GREEN}[SUCESSO]${NC} Diretório '$template_dir' criado." || echo -e "  ${RED}[FALHA]${NC} Não foi possível criar o diretório '$template_dir'."
-        fi
-
-        # 4. Verificar e criar o arquivo
-        if [ ! -f "$template_file_path" ]; then
-            echo -e "  ${YELLOW}[CRIANDO ARQUIVO]${NC} O arquivo '$template_file_path' não existe. Criando..."
-            touch "$template_file_path" && echo -e "  ${GREEN}[SUCESSO]${NC} Arquivo '$template_file_path' criado." || echo -e "  ${RED}[FALHA]${NC} Não foi possível criar o arquivo '$template_file_path'."
-        fi
-    done
-
-    echo -e "\nVerificação de templates do Cleaner concluída."
 }
 
 configurar_servico_db() {
@@ -466,27 +532,8 @@ while true; do
 
     case $opcao in
         1)
-            echo -e "\n[+] Aplicando configuração padrão...\n"
-            if ! command -v jq &> /dev/null; then
-                echo -e "${RED}Erro: A ferramenta 'jq' é necessária, mas não foi encontrada. Por favor, instale-a.${NC}"
-                continue
-            fi
-
-            if [ ! -f "$ENV_JSON_PATH" ]; then
-                echo -e "${RED}Erro: Arquivo de configuração '$ENV_JSON_PATH' não encontrado.${NC}"
-                continue
-            fi
-
-            echo "Verificando e criando diretórios definidos em '$ENV_JSON_PATH'..."
-            jq -r '.path | .[]' "$ENV_JSON_PATH" | while IFS= read -r dir_path; do
-                if [ -d "$dir_path" ]; then
-                    echo -e "  ${GREEN}[EXISTE]${NC} O diretório '$dir_path' já existe."
-                else
-                    echo -e "  ${YELLOW}[CRIANDO]${NC} O diretório '$dir_path' não existe. Criando..."
-                    mkdir -p "$dir_path" && echo -e "  ${GREEN}[SUCESSO]${NC} Diretório '$dir_path' criado." || echo -e "  ${RED}[FALHA]${NC}   Não foi possível criar o diretório '$dir_path'."
-                fi
-            done
-            echo -e "\nConfiguração de diretórios concluída."
+            echo -e "\n${YELLOW}Esta função foi movida para o script 'install.sh' para ser executada após a instalação.${NC}"
+            echo "O 'install.sh' agora garante que todos os diretórios base sejam criados."
             ;;
         2)
             echo -e "\n[*] Mostrando configuração atual...\n"
@@ -549,8 +596,8 @@ while true; do
                     3) key_to_update="commands_json" ;;
                     4) key_to_update="tokens_json" ;;
                     5) 
-                        verificar_e_criar_templates_cleaner
-                        key_to_update="cleaner-templates" 
+                        echo -e "\n${YELLOW}A verificação e criação de templates agora é feita pelo 'install.sh'.${NC}"
+                        key_to_update="cleaner-templates"
                         ;;
                     0) break ;;
                     *) echo -e "\n[!] Opção inválida.\n"; continue ;;
@@ -610,14 +657,128 @@ while true; do
                                         case $wordlist_opcao in
                                             1)
                                                 read -p "Deseja o modo silencioso (salva o caminho com o nome do arquivo) ou assistido (pergunta um nome para cada)? (s/A): " modo_wordlist
-                                                local output_file="/tmp/autohunting_wordlists_manual.txt"
-                                                echo -e "[*] Os caminhos serão salvos em '$output_file'. Digite 'sair' para terminar."
+                                                echo -e "[*] Digite 'sair' para terminar."
 
                                                 while true; do
                                                     read -p "Informe o caminho para o arquivo .txt da wordlist: " wordlist_path
                                                     if [[ "$wordlist_path" == "sair" ]]; then
                                                         break
                                                     fi
+
+                                                    if [[ ! "$wordlist_path" == *.txt ]]; then
+                                                        echo -e "${RED}Erro: O caminho deve terminar com .txt${NC}"
+                                                        continue
+                                                    fi
+
+                                                    if [ ! -f "$wordlist_path" ]; then
+                                                        echo -e "${RED}Erro: Arquivo não encontrado em '$wordlist_path'${NC}"
+                                                        continue
+                                                    fi
+
+                                                    local wordlist_name
+                                                    wordlist_name=$(basename "$wordlist_path" .txt)
+
+                                                    if [[ ! "$modo_wordlist" =~ ^[sS]$ ]]; then
+                                                        # Modo Assistido
+                                                        read -p "Digite um nome para esta wordlist (padrão: '$wordlist_name'): " custom_name
+                                                        if [ -n "$custom_name" ]; then
+                                                            wordlist_name="$custom_name"
+                                                        fi
+                                                        add_wordlist_to_map "$wordlist_name" "$wordlist_path"
+                                                        echo -e "${GREEN}Wordlist '$wordlist_name' adicionada ao mapa.${NC}"
+                                                    else
+                                                        # Modo Silencioso
+                                                        add_wordlist_to_map "$wordlist_name" "$wordlist_path"
+                                                        echo -e "${GREEN}Wordlist '$wordlist_name' adicionada ao mapa (modo silencioso).${NC}"
+                                                    fi
+                                                done
+                                                echo -e "\n${GREEN}Configuração manual de wordlists concluída.${NC}"
+                                                break
+                                                ;;
+                                            2)
+                                                echo -e "\n[*] Iniciando busca automática por arquivos .txt no diretório base: '$current_wordlist_dir'..."
+                                                generate_wordlist_map_from_dir "$current_wordlist_dir"
+                                                break # Sai do loop de wordlist
+                                                ;;
+                                            0) break ;; # Sai do loop de wordlist
+                                            *) echo -e "\n[!] Opção inválida.\n" ;;
+                                        esac
+                                    done
+                                    continue # Volta para o menu de caminhos
+                                    ;;
+                                6) key_to_update="log_dir" ;;
+                                0) break ;;
+                                *) echo -e "\n[!] Opção inválida.\n"; continue ;;
+                            esac
+                        done
+                        ;;
+                    0)
+                        break
+                        ;;
+                    *)
+                        echo -e "\n[!] Opção inválida.\n"
+                        ;;
+                esac
+            done
+            ;;
+        6)
+            MENU_TYPE="funcionalidade específica"
+            while true; do
+                show_menu_joker
+                read -p "Escolha uma opção: " joker_opcao
+
+                case $joker_opcao in
+                    1) echo -e "\nConfigurando funcionalidade: Informações SUJAS\n" ;;
+                    2) echo -e "\nConfigurando funcionalidade: Informações LIMPAS\n" ;;
+                    3) echo -e "\nConfigurando funcionalidade: Templates para LIMPEZA\n" ;;
+                    4) echo -e "\nConfigurando funcionalidade: Comandos de FERRAMENTAS\n" ;;
+                    5) echo -e "\nConfigurando funcionalidade: WORDLISTs\n" ;;
+                    6) 
+                        while true; do
+                            show_menu_logs
+                            read -p "Escolha uma opção para Logs: " log_opcao
+                            case $log_opcao in
+                                1)
+                                    read -p "Digite o novo caminho para o diretório de logs: " new_log_path
+                                    if [ -n "$new_log_path" ]; then
+                                        update_json_value "$ENV_JSON_PATH" ".path.log_dir" "$new_log_path"
+                                    else
+                                        echo -e "${YELLOW}Nenhum caminho fornecido. Operação cancelada.${NC}"
+                                    fi
+                                    ;;
+                                2)
+                                    read -p "Deseja que o log seja salvo em arquivo ou exibido no terminal? (Arquivo/Terminal): " tipo_log
+                                    if [[ "$tipo_log" =~ ^[Tt] ]]; then
+                                        local terminal_shell
+                                        terminal_shell=$(echo "$SHELL")
+                                        local terminal_path
+                                        terminal_path=$(command -v "$(basename "$terminal_shell")")
+                                        echo -e "[*] Saída configurada para o terminal."
+                                        echo -e "    Seu terminal atual é: ${BOLD}${terminal_shell}${NC}"
+                                        echo -e "    Localizado em: ${BOLD}${terminal_path}${NC}"
+                                        # Aqui você pode adicionar lógica para salvar essa preferência, se necessário
+                                    else
+                                        echo -e "[*] Saída configurada para salvar em arquivo (padrão)."
+                                    fi
+                                    ;;
+                                3)
+                                    echo -e "\n${YELLOW}Funcionalidade de política de retenção de logs ainda não implementada.${NC}"
+                                    ;;
+                                0) break ;;
+                                *) echo -e "\n[!] Opção inválida.\n" ;;
+                            esac
+                        done
+                        ;;
+                    0) break ;;
+                    *) echo -e "\n[!] Opção inválida.\n" ;;
+                esac
+            done
+            ;;
+        *)
+            echo -e "\n[!] Opção inválida.\n"
+            ;;
+    esac
+done
 
                                                     if [[ ! "$wordlist_path" == *.txt ]]; then
                                                         echo -e "${RED}Erro: O caminho deve terminar com .txt${NC}"

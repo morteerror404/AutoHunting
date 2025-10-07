@@ -14,6 +14,7 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
+ENV_JSON_PATH="config/json/env.json" # Adicionado para a nova função
 LOG_FILE="/var/log/autohunting_install.log"
 DELAY_MS=300
 DRY_RUN=${DRY_RUN:-0}
@@ -398,6 +399,62 @@ show_install_summary() {
     done
 }
 
+# =================================
+# Funções de Configuração de Ambiente (Movidas de config_enviroment.sh)
+# =================================
+
+verificar_e_criar_diretorios_base() {
+    echo -e "\n[+] Verificando e criando diretórios base definidos em '$ENV_JSON_PATH'..."
+    if ! command -v jq &> /dev/null; then
+        log_message "ERROR" "A ferramenta 'jq' é necessária, mas não foi encontrada."
+        return 1
+    fi
+
+    if [ ! -f "$ENV_JSON_PATH" ]; then
+        log_message "ERROR" "Arquivo de configuração '$ENV_JSON_PATH' não encontrado."
+        return 1
+    fi
+
+    jq -r '.path | .[]' "$ENV_JSON_PATH" | while IFS= read -r dir_path; do
+        if [ -z "$dir_path" ] || [ "$dir_path" == "null" ]; then continue; fi
+        if [ -d "$dir_path" ]; then
+            log_message "INFO" "Diretório '$dir_path' já existe."
+        else
+            log_message "INFO" "Criando diretório '$dir_path'..."
+            if mkdir -p "$dir_path"; then
+                log_message "SUCCESS" "Diretório '$dir_path' criado."
+            else
+                log_message "ERROR" "Falha ao criar o diretório '$dir_path'."
+            fi
+        fi
+    done
+    echo -e "\nConfiguração de diretórios base concluída."
+}
+
+verificar_e_criar_templates_cleaner() {
+    echo -e "\n[*] Verificando e criando arquivos de template do Cleaner..."
+    if ! command -v jq &> /dev/null; then
+        log_message "ERROR" "A ferramenta 'jq' é necessária."
+        return 1
+    fi
+
+    local cleaner_templates_config_path
+    cleaner_templates_config_path=$(jq -r '.archives."cleaner-templates"' "$ENV_JSON_PATH")
+
+    if [ ! -f "$cleaner_templates_config_path" ]; then
+        log_message "ERROR" "Arquivo de configuração de templates do cleaner não encontrado em '$cleaner_templates_config_path'."
+        return 1
+    fi
+
+    jq -r '.templates | values[]' "$cleaner_templates_config_path" | while IFS= read -r template_file_path; do
+        if [ -z "$template_file_path" ] || [ "$template_file_path" == "null" ]; then continue; fi
+        mkdir -p "$(dirname "$template_file_path")"
+        touch "$template_file_path"
+    done
+
+    log_message "SUCCESS" "Verificação de templates do Cleaner concluída."
+}
+
 # =============================
 # Boot checks
 # =============================
@@ -485,5 +542,9 @@ main() {
             esac
         done
     done
+
+    # Após a instalação, executa as tarefas de configuração de ambiente
+    verificar_e_criar_diretorios_base
+    verificar_e_criar_templates_cleaner
 }
 main
