@@ -62,7 +62,6 @@ show_menu_personalizados() {
     echo " 2) Deseja configurar apenas um caminho"
     echo " 0) Voltar"
     echo
-
 }
 
 show_menu_joker() {
@@ -83,6 +82,8 @@ show_menu_servicos() {
     echo -e "--------------------------------\n"
     echo " 1) Serviço para inicializar o banco de dados"
     echo " 2) Criar o serviço para iniciar uma rotina especifica"
+    echo " 3) Mostrar rotinas criadas"
+    echo " 4) Excluir uma rotina" 
     echo " 0) Voltar"
     echo
 }
@@ -141,13 +142,15 @@ configurar_servico_db() {
 
 criar_servico_rotina() {
     verifica_root
+    local prefixo_servico="autohunt_"
+
     if ! command -v jq &> /dev/null || ! command -v systemctl &> /dev/null; then
         echo -e "${RED}Erro: As ferramentas 'jq' e 'systemctl' são necessárias.${NC}"
         return 1
     fi
 
     # --- Coleta de Informações ---
-    read -p "Digite um nome para o serviço (ex: capturar-escopos-h1-semanal): " nome_servico_raw
+    read -p "Digite um nome para a rotina (ex: capturar_escopos_h1): " nome_servico_raw
     local nome_servico
     nome_servico=$(echo "$nome_servico_raw" | tr -cs 'a-zA-Z0-9' '_' | tr '[:upper:]' '[:lower:]')
     echo -e "[*] Nome do serviço será: ${BOLD}${nome_servico}${NC}"
@@ -209,14 +212,14 @@ criar_servico_rotina() {
     mkdir -p "$service_markers_dir"
 
     # 1. Criar o script wrapper
-    local wrapper_path="/usr/local/bin/${nome_servico}_runner.sh"
+    local wrapper_path="/usr/local/bin/${prefixo_servico}${nome_servico}_runner.sh"
     echo -e "[*] Criando script wrapper em '$wrapper_path'..."
     cat > "$wrapper_path" <<EOF
 #!/bin/bash
 set -euo pipefail
 
 MARKER_DIR="$service_markers_dir"
-MARKER_FILE="\$MARKER_DIR/${nome_servico}_\$(date +'$marker_format').marker"
+MARKER_FILE="\$MARKER_DIR/${prefixo_servico}${nome_servico}_\$(date +'$marker_format').marker"
 
 if [ -f "\$MARKER_FILE" ]; then
     echo "[\$(date)] Rotina '${nome_servico}' já executada neste período. Saindo."
@@ -242,11 +245,11 @@ EOF
     chmod +x "$wrapper_path"
 
     # 2. Criar o arquivo .service
-    local service_path="/etc/systemd/system/${nome_servico}.service"
+    local service_path="/etc/systemd/system/${prefixo_servico}${nome_servico}.service"
     echo -e "[*] Criando arquivo de serviço em '$service_path'..."
     cat > "$service_path" <<EOF
 [Unit]
-Description=Serviço agendado do AutoHunting para a rotina '${nome_servico_raw}'
+Description=[AutoHunting] Serviço para a rotina '${nome_servico_raw}'
 
 [Service]
 Type=oneshot
@@ -255,11 +258,11 @@ User=$(logname) # Executa como o usuário que configurou
 EOF
 
     # 3. Criar o arquivo .timer
-    local timer_path="/etc/systemd/system/${nome_servico}.timer"
+    local timer_path="/etc/systemd/system/${prefixo_servico}${nome_servico}.timer"
     echo -e "[*] Criando arquivo de timer em '$timer_path'..."
     cat > "$timer_path" <<EOF
 [Unit]
-Description=Timer para a rotina '${nome_servico_raw}' do AutoHunting
+Description=[AutoHunting] Timer para a rotina '${nome_servico_raw}'
 
 [Timer]
 OnCalendar=$on_calendar
@@ -272,11 +275,72 @@ EOF
     # --- Ativação ---
     echo -e "[*] Recarregando, habilitando e iniciando o timer..."
     systemctl daemon-reload
-    systemctl enable "${nome_servico}.timer"
-    systemctl start "${nome_servico}.timer"
+    systemctl enable "${prefixo_servico}${nome_servico}.timer"
+    systemctl start "${prefixo_servico}${nome_servico}.timer"
 
-    echo -e "${GREEN}Serviço e timer '${nome_servico}' configurados com sucesso!${NC}"
-    systemctl list-timers --all | grep "$nome_servico"
+    echo -e "${GREEN}Serviço e timer '${prefixo_servico}${nome_servico}' configurados com sucesso!${NC}"
+    systemctl list-timers --all | grep "${prefixo_servico}${nome_servico}"
+}
+
+mostrar_rotinas_criadas() {
+    echo -e "\n[*] Verificando rotinas do AutoHunting criadas...\n"
+    if ! systemctl list-timers --all | grep -q '\[AutoHunting\]'; then
+        echo -e "${YELLOW}Nenhuma rotina agendada do AutoHunting foi encontrada.${NC}"
+        return
+    fi
+    
+    echo -e "${BOLD}Rotinas agendadas:${NC}"
+    systemctl list-timers --all | grep '\[AutoHunting\]' --color=never
+}
+
+excluir_rotina() {
+    verifica_root
+    local prefixo_servico="autohunt_"
+
+    echo -e "\n[*] Listando rotinas que podem ser excluídas..."
+    local rotinas
+    mapfile -t rotinas < <(ls -1 /etc/systemd/system/${prefixo_servico}*.timer 2>/dev/null | xargs -n 1 basename | sed "s/${prefixo_servico}//" | sed 's/\.timer//')
+
+    if [ ${#rotinas[@]} -eq 0 ]; then
+        echo -e "${YELLOW}Nenhuma rotina criada pelo AutoHunting para excluir.${NC}"
+        return
+    fi
+
+    for i in "${!rotinas[@]}"; do
+        echo " $((i+1))) ${rotinas[$i]}"
+    done
+    echo " 0) Cancelar"
+
+    read -p "Escolha a rotina para excluir: " choice
+    if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 0 ] || [ "$choice" -gt ${#rotinas[@]} ]; then
+        echo -e "${RED}Opção inválida.${NC}"; return 1
+    fi
+    if [ "$choice" -eq 0 ]; then
+        echo "[*] Operação cancelada."; return
+    fi
+
+    local nome_rotina="${rotinas[$((choice-1))]}"
+    local nome_completo="${prefixo_servico}${nome_rotina}"
+
+    read -p "Tem certeza que deseja excluir permanentemente a rotina '${nome_rotina}'? (s/N): " confirm
+    if [[ ! "$confirm" =~ ^[sS]$ ]]; then
+        echo "[*] Exclusão cancelada."; return
+    fi
+
+    echo -e "[*] Desabilitando e parando o timer '${nome_completo}.timer'..."
+    systemctl disable --now "${nome_completo}.timer"
+
+    echo -e "[*] Removendo arquivos de serviço e timer..."
+    rm -f "/etc/systemd/system/${nome_completo}.service"
+    rm -f "/etc/systemd/system/${nome_completo}.timer"
+
+    echo -e "[*] Removendo script wrapper..."
+    rm -f "/usr/local/bin/${nome_completo}_runner.sh"
+
+    echo -e "[*] Recarregando o systemd..."
+    systemctl daemon-reload
+
+    echo -e "${GREEN}Rotina '${nome_rotina}' excluída com sucesso.${NC}"
 }
 # ===============================
 # LOOP PRINCIPAL DE NAVEGAÇÃO
@@ -345,6 +409,13 @@ while true; do
                     2)
                         echo -e "\n[*] Configurando serviço para rotina específica...\n"
                         criar_servico_rotina
+                        ;;
+                    3)
+                        mostrar_rotinas_criadas
+                        ;;
+                    4)
+                        echo -e "\n[*] Excluir uma rotina de usuário...\n"
+                        excluir_rotina
                         ;;
                     0) break ;;
                     *) echo -e "\n[!] Opção inválida.\n" ;;

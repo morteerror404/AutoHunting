@@ -1,10 +1,13 @@
 {
     "execution_plans": {
         "fullHunt": [
-            { "step": "RequestAPI", "description": "Coletando alvos via APIs de bug bounty..." },
-            { "step": "RunScanners", "description": "Executando varreduras nos alvos coletados..." },
-            { "step": "CleanResults", "description": "Limpando e processando resultados das varreduras..." },
-            { "step": "StoreResults", "description": "Armazenando resultados limpos no banco de dados..." }
+            { "step": "RequestAPI", "description": "Coletando alvos via APIs de bug bounty...", "source": "system" },
+            { "step": "RunScanners", "description": "Executando varreduras nos alvos coletados...", "source": "system" },
+            { "step": "CleanResults", "description": "Limpando e processando resultados das varreduras...", "source": "system" },
+            { "step": "StoreResults", "description": "Armazenando resultados limpos no banco de dados...", "source": "system" }
+        ],
+        "userDefinedHunt": [
+            { "step": "RequestAPI", "description": "Exemplo de rotina do usuário: Coletando alvos...", "source": "user" }
         ]
     }
 }
