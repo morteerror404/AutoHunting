@@ -96,26 +96,31 @@ func ProcessCleanFile(filename string, db *sql.DB) error {
 	}
 	defer inputFile.Close()
 
+	// Carrega as configurações para determinar o tipo de DB e os comandos
+	var dbInfo DBInfo
+	if err := utils.LoadJSON("db_info.json", &dbInfo); err != nil {
+		return fmt.Errorf("erro ao carregar db_info.json para processamento: %w", err)
+	}
+	dbType := dbInfo.ConfigDB.Type
+	_, err = getCommandsConfig(dbType, dbInfo)
+	if err != nil {
+		return err
+	}
+
 	baseName := strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
 	parts := strings.Split(baseName, "_clean_")
 	if len(parts) != 2 {
 		return fmt.Errorf("formato de nome de arquivo inválido: %s. Esperado 'ferramenta_alvo_timestamp_clean_template.txt'", baseName)
 	}
 
-	// Extrai o nome da tabela e o escopo do nome do arquivo
-	// Ex: nmap_example.com_2023_clean_open_ports -> Tabela: nmap_open_ports, Escopo: example.com
 	templateName := parts[1]
 	toolAndScope := parts[0]
 
-	var tool, scope string
+	var tool string
 	if idx := strings.Index(toolAndScope, "_"); idx != -1 {
 		tool = toolAndScope[:idx]
-		// O resto, menos o timestamp, é o escopo.
-		// Esta é uma simplificação; uma abordagem mais robusta seria necessária se os escopos contiverem '_'.
-		scopeParts := strings.Split(toolAndScope[idx+1:], "_")
-		scope = strings.Join(scopeParts[:len(scopeParts)-1], "_") // Remove o timestamp
 	} else {
-		return fmt.Errorf("não foi possível determinar a ferramenta e o escopo de: %s", toolAndScope)
+		return fmt.Errorf("não foi possível determinar a ferramenta de: %s", toolAndScope)
 	}
 
 	tableName := fmt.Sprintf("%s_%s", tool, templateName)
@@ -138,7 +143,10 @@ func ProcessCleanFile(filename string, db *sql.DB) error {
 		fields := strings.Split(line, "|")
 
 		// Constrói a query de forma segura e dinâmica
-		columns := append(fields, scope)
+		// A lógica de adicionar o 'scope' foi removida para simplificar,
+		// pois a extração era frágil. A inserção agora foca nos dados do arquivo limpo.
+		// Uma lógica mais robusta para metadados (como o escopo) deve ser implementada.
+		columns := fields
 		placeholders := make([]string, len(columns))
 		for i := range columns {
 			placeholders[i] = fmt.Sprintf("$%d", i+1)
