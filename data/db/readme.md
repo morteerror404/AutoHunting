@@ -66,3 +66,5 @@ INÍCIO DA PERSISTÊNCIA DE DADOS
 
 FIM DA PERSISTÊNCIA DE DADOS
 ```
+
+pendente implementar função para inserção manual 
