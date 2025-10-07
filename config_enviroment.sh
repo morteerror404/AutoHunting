@@ -14,6 +14,7 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
+ENV_JSON_PATH="config/json/env.json" # Caminho para o arquivo env.json
 LOG_FILE="/var/log/autohunting_install.log"
 DELAY_MS=300
 DRY_RUN=${DRY_RUN:-0}
@@ -85,7 +86,26 @@ while true; do
     case $opcao in
         1)
             echo -e "\n[+] Aplicando configuração padrão...\n"
-            # aqui você adiciona a lógica correspondente
+            if ! command -v jq &> /dev/null; then
+                echo -e "${RED}Erro: A ferramenta 'jq' é necessária, mas não foi encontrada. Por favor, instale-a.${NC}"
+                continue
+            fi
+
+            if [ ! -f "$ENV_JSON_PATH" ]; then
+                echo -e "${RED}Erro: Arquivo de configuração '$ENV_JSON_PATH' não encontrado.${NC}"
+                continue
+            fi
+
+            echo "Verificando e criando diretórios definidos em '$ENV_JSON_PATH'..."
+            jq -r '.path | .[]' "$ENV_JSON_PATH" | while IFS= read -r dir_path; do
+                if [ -d "$dir_path" ]; then
+                    echo -e "  ${GREEN}[EXISTE]${NC} O diretório '$dir_path' já existe."
+                else
+                    echo -e "  ${YELLOW}[CRIANDO]${NC} O diretório '$dir_path' não existe. Criando..."
+                    mkdir -p "$dir_path" && echo -e "  ${GREEN}[SUCESSO]${NC} Diretório '$dir_path' criado." || echo -e "  ${RED}[FALHA]${NC}   Não foi possível criar o diretório '$dir_path'."
+                fi
+            done
+            echo -e "\nConfiguração de diretórios concluída."
             ;;
         2)
             echo -e "\n[*] Mostrando configuração atual...\n"
