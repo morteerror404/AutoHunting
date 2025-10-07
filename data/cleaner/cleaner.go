@@ -16,41 +16,52 @@ type Template struct {
 	Regex  string   `json:"regex"`
 	Fields []string `json:"fields"`
 }
+
+// Templates agora usa um mapa genérico para suportar qualquer ferramenta definida no JSON.
 type Templates struct {
-	Nmap   map[string]Template `json:"nmap"`
-	Nuclei map[string]Template `json:"nuclei"`
+	Tools map[string]map[string]Template `json:"tools"`
+}
+
+// EnvConfig carrega os caminhos necessários do env.json.
+type EnvConfig struct {
+	Path struct {
+		ToolCleanedDir string `json:"tool_cleaned_dir"`
+	} `json:"path"`
 }
 
 // O resto da sua estrutura de structs e lógica para cleanFile ...
 
 func CleanFile(filename string, templateName string) error {
+	// Carrega as configurações de ambiente para obter o diretório de saída.
+	var env EnvConfig
+	if err := utils.LoadJSON("env.json", &env); err != nil {
+		return fmt.Errorf("erro ao carregar env.json: %w", err)
+	}
+
 	var templates Templates
 	if err := utils.LoadJSON("cleaner-templates.json", &templates); err != nil {
 		return fmt.Errorf("erro ao carregar cleaner-templates.json: %w", err)
 	}
 
-	// --- LÓGICA DE LIMPEZA (TRECHO CHAVE) ---
-
-	// 2. IDENTIFICAR FERRAMENTA E SELECIONAR O TEMPLATE CORRETO
+	// 2. IDENTIFICAR FERRAMENTA E SELECIONAR O TEMPLATE DE FORMA DINÂMICA
 	var selectedTemplate Template
+	var found bool
+	base := filepath.Base(filename)
+	for toolName, toolTemplates := range templates.Tools {
+		if strings.HasPrefix(base, toolName+"_") {
+			if t, ok := toolTemplates[templateName]; ok {
+				selectedTemplate = t
+				found = true
+				break
+			}
+		}
+	}
 
-	if strings.HasPrefix(filename, "nmap_") {
-		t, ok := templates.Nmap[templateName]
-		if !ok {
-			return fmt.Errorf("template Nmap '%s' não encontrado no JSON", templateName)
-		}
-		selectedTemplate = t
-	} else if strings.HasPrefix(filename, "nuclei_") {
-		t, ok := templates.Nuclei[templateName]
-		if !ok {
-			return fmt.Errorf("template Nuclei '%s' não encontrado no JSON", templateName)
-		}
-		selectedTemplate = t
-	} else {
+	if !found {
 		return fmt.Errorf("prefixo de ferramenta desconhecido no arquivo: %s", filename)
 	}
 
-	// 3. LER O ARQUIVO DE RESULTADOS E APLICAR A LIMPEZA
+	// 3. LER O ARQUIVO DE RESULTADOS BRUTOS E APLICAR A LIMPEZA
 	inputFile, err := os.Open(filename)
 	if err != nil {
 		return fmt.Errorf("erro ao abrir arquivo de resultados %s: %w", filename, err)
@@ -84,11 +95,16 @@ func CleanFile(filename string, templateName string) error {
 	}
 
 	// 4. SALVAR OS DADOS LIMPOS NO NOVO ARQUIVO TXT
-	// Cria o nome do arquivo de saída: 'nmap_clean_escopoXYZ.txt'
-	baseName := strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)) // Remove a extensão
-	outputFilename := baseName + "_clean_" + templateName + ".txt"                  // Adiciona _clean_ e o template
+	baseName := strings.TrimSuffix(base, filepath.Ext(base))
+	outputFilename := baseName + "_clean_" + templateName + ".txt"
+	outputFilePath := filepath.Join(env.Path.ToolCleanedDir, outputFilename)
 
-	outputFile, err := os.Create(outputFilename)
+	// Garante que o diretório de saída exista.
+	if err := os.MkdirAll(env.Path.ToolCleanedDir, 0755); err != nil {
+		return fmt.Errorf("erro ao criar diretório de saída '%s': %w", env.Path.ToolCleanedDir, err)
+	}
+
+	outputFile, err := os.Create(outputFilePath)
 	if err != nil {
 		return fmt.Errorf("erro ao criar arquivo de saída: %w", err)
 	}
@@ -103,7 +119,7 @@ func CleanFile(filename string, templateName string) error {
 	}
 	writer.Flush()
 
-	fmt.Printf("Sucesso! Dados limpos do template '%s' salvos em: %s\n", templateName, outputFilename)
+	fmt.Printf("Sucesso! Dados limpos do template '%s' salvos em: %s\n", templateName, outputFilePath)
 	return nil
 }
 
