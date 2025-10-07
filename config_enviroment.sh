@@ -27,7 +27,7 @@ GIT_INSTALL_DIR=""  # diretório personalizado fornecido pelo usuário
 MAX_JOBS=4  # para parallelização de instalações
 MENU_TYPE=""
 
-# =============================
+# ===============================
 # Funções de verificação
 # =============================
 log() {
@@ -55,6 +55,17 @@ show_menu_principal() {
     echo
 }
 
+show_menu_archives() {
+    echo -e "\n=== Configuração de Arquivos JSON ==="
+    echo -e "-------------------------------------\n"
+    echo " 1) Arquivo de Ordem do Maestro (maestro_exec_order)"
+    echo " 2) Templates de Ordem (maestro_order_templates)"
+    echo " 3) Comandos das Ferramentas (commands_json)"
+    echo " 4) Tokens de API (tokens_json)"
+    echo " 5) Templates do Cleaner (cleaner-templates)"
+    echo " 0) Voltar"
+    echo
+}
 show_menu_personalizados() {
     echo -e "\n=== Caminhos Personalizados ==="
     echo -e "--------------------------------\n"
@@ -66,11 +77,11 @@ show_menu_personalizados() {
 
 show_menu_joker() {
     echo -e "\n=== Configuração de $MENU_TYPE ==="
-    echo -e "--------------------------------\n"
-    echo " 1) Informações SUJAS"
-    echo " 2) Informações LIMPAS"
-    echo " 3) Templates para LIMPEZA"
-    echo " 4) Comandos de FERRAMENTAS"
+    echo -e "-------------------------------------------\n"
+    echo " 1) Diretório de Resultados Brutos (tool_dirt_dir)"
+    echo " 2) Diretório de Resultados Limpos (tool_cleaned_dir)"
+    echo " 3) Diretório de Escopos Selecionados (escopos_selecionados)"
+    echo " 4) Diretório de API (Resultados Brutos) (api_dirt_results_path)"
     echo " 5) WORDLISTs"
     echo " 6) LOGS"
     echo " 0) Voltar"
@@ -91,6 +102,23 @@ show_menu_servicos() {
 # ===============================
 # Funções de Lógica
 # ===============================
+
+update_json_value() {
+    local file_path="$1"
+    local key_path="$2"
+    local new_value="$3"
+
+    if ! command -v jq &> /dev/null; then
+        echo -e "${RED}Erro: 'jq' não encontrado. Esta função requer jq.${NC}"
+        return 1
+    fi
+
+    # Cria um arquivo temporário para a saída do jq
+    local tmp_file
+    tmp_file=$(mktemp)
+    jq --arg key_path "$key_path" --arg new_value "$new_value" 'setpath($key_path | split("."); $new_value)' "$file_path" > "$tmp_file" && mv "$tmp_file" "$file_path"
+    echo -e "${GREEN}Arquivo '$file_path' atualizado: '$key_path' definido como '$new_value'.${NC}"
+}
 
 configurar_servico_db() {
     verifica_root
@@ -423,8 +451,29 @@ while true; do
             done
             ;;
         4)
-            echo -e "\n[*] Configurando diretório para arquivos JSON...\n"
-            # lógica correspondente
+            while true; do
+                show_menu_archives
+                read -p "Escolha o arquivo para configurar: " archive_choice
+
+                local key_to_update=""
+                case $archive_choice in
+                    1) key_to_update="maestro_exec_order" ;;
+                    2) key_to_update="maestro_order_templates" ;;
+                    3) key_to_update="commands_json" ;;
+                    4) key_to_update="tokens_json" ;;
+                    5) key_to_update="cleaner-templates" ;;
+                    0) break ;;
+                    *) echo -e "\n[!] Opção inválida.\n"; continue ;;
+                esac
+
+                read -p "Digite o novo caminho para '$key_to_update': " new_path
+                if [ -n "$new_path" ]; then
+                    # O caminho da chave no JSON é '.archives.nome_da_chave'
+                    update_json_value "$ENV_JSON_PATH" ".archives.$key_to_update" "$new_path"
+                else
+                    echo -e "${YELLOW}Nenhum caminho fornecido. Operação cancelada.${NC}"
+                fi
+            done
             ;;
         5)
             while true; do
@@ -434,29 +483,48 @@ while true; do
                 case $subopcao in
                     1)
                         echo -e "\n[*] Configurando vários caminhos em sequência...\n"
-                        declare -a caminhos_desc=("Informações SUJAS" "Informações LIMPAS" "TEMPLATES para LIMPEZA" "COMANDOS de FERRAMENTAS" "WORDLISTs" "LOGS")
+                        # Mapeia a descrição para a chave real no JSON
+                        declare -A path_map=(
+                            ["Resultados Brutos das Ferramentas"]="tool_dirt_dir"
+                            ["Resultados Limpos das Ferramentas"]="tool_cleaned_dir"
+                            ["Resultados Brutos da API"]="api_dirt_results_path"
+                            ["Resultados Limpos da API"]="api_clean_results_path"
+                            ["Diretório de Wordlists"]="wordlist_dir"
+                            ["Diretório de Logs"]="log_dir"
+                        )
                         
-                        for desc in "${caminhos_desc[@]}"; do
-                            read -p "Caminho para: ${desc}: " user_path
-                            # Aqui você adicionaria a lógica para salvar a variável 'user_path' no arquivo de configuração JSON.
-                            echo "Caminho para '${desc}' definido como: ${user_path}"
+                        for desc in "${!path_map[@]}"; do
+                            read -p "Caminho para: ${desc}: " new_path
+                            if [ -n "$new_path" ]; then
+                                local key="${path_map[$desc]}"
+                                update_json_value "$ENV_JSON_PATH" ".path.$key" "$new_path"
+                            fi
                         done
                         ;;
                     2)
+                        MENU_TYPE="Caminho"
                         while true; do
                             show_menu_joker
                             read -p "Escolha o caminho para configurar: " caminho
 
+                            local key_to_update=""
                             case $caminho in
-                                1) echo -e "\nConfigurando caminho: informações SUJAS\n" ;;
-                                2) echo -e "\nConfigurando caminho: informações LIMPAS\n" ;;
-                                3) echo -e "\nConfigurando caminho: templates para LIMPEZA\n" ;;
-                                4) echo -e "\nConfigurando caminho: comandos de FERRAMENTAS\n" ;;
-                                5) echo -e "\nConfigurando caminho: WORDLISTs\n" ;;
-                                6) echo -e "\nConfigurando caminho: LOGS\n" ;;
+                                1) key_to_update="tool_dirt_dir" ;;
+                                2) key_to_update="tool_cleaned_dir" ;;
+                                3) key_to_update="escopos_selecionados" ;;
+                                4) key_to_update="api_dirt_results_path" ;;
+                                5) key_to_update="wordlist_dir" ;;
+                                6) key_to_update="log_dir" ;;
                                 0) break ;;
-                                *) echo -e "\n[!] Opção inválida.\n" ;;
+                                *) echo -e "\n[!] Opção inválida.\n"; continue ;;
                             esac
+
+                            read -p "Digite o novo caminho para '$key_to_update': " new_path
+                            if [ -n "$new_path" ]; then
+                                update_json_value "$ENV_JSON_PATH" ".path.$key_to_update" "$new_path"
+                            else
+                                echo -e "${YELLOW}Nenhum caminho fornecido. Operação cancelada.${NC}"
+                            fi
                         done
                         ;;
                     0)
@@ -469,7 +537,7 @@ while true; do
             done
             ;;
         6)
-            MENU_TYPE="funcionalidade especifica"
+            MENU_TYPE="funcionalidade específica"
             while true; do
                 show_menu_joker
                 read -p "Escolha uma opção: " joker_opcao
