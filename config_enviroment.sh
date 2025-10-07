@@ -24,6 +24,7 @@ TOOLS_PM_INSTALLED=()
 TOOLS_GIT_INSTALLED=()
 GIT_INSTALL_DIR=""  # diretório personalizado fornecido pelo usuário
 MAX_JOBS=4  # para parallelização de instalações
+MENU_TYPE=""
 
 # =============================
 # Funções de verificação
@@ -38,9 +39,6 @@ verifica_root() {
     log "INFO" "Permissões ok (root or sudo)."
 }
 
-show_menu(){
-#!/bin/bash
-
 show_menu_principal() {
     echo -e "\n=== Ferramenta de Configuração de Ambiente ==="
     echo -e "-----------------------------------------------\n"
@@ -49,7 +47,8 @@ show_menu_principal() {
     echo " 3) Configurar serviço de inicialização automática"
     echo " 4) Configurar diretório para arquivos JSON"
     echo " 5) Declarar caminhos personalizados"
-    echo " 6) Voltar"
+    echo " 6) Configuração especifica de JSON" 
+    echo " 0) Voltar"
     echo
 }
 
@@ -60,10 +59,11 @@ show_menu_personalizados() {
     echo " 2) Deseja configurar apenas um caminho"
     echo " 0) Voltar"
     echo
+
 }
 
-show_menu_caminhos() {
-    echo -e "\n=== Configuração de Caminhos ==="
+show_menu_joker() {
+    echo -e "\n=== Configuração de $MENU_TYPE ==="
     echo -e "--------------------------------\n"
     echo " 1) Informações SUJAS"
     echo " 2) Informações LIMPAS"
@@ -117,7 +117,7 @@ while true; do
                         ;;
                     2)
                         while true; do
-                            show_menu_caminhos
+                            show_menu_joker
                             read -p "Escolha o caminho para configurar: " caminho
 
                             case $caminho in
@@ -142,8 +142,22 @@ while true; do
             done
             ;;
         6)
-            echo -e "\nSaindo...\n"
-            break
+            MENU_TYPE="funcionalidade especifica"
+            while true; do
+                show_menu_joker
+                read -p "Escolha uma opção: " joker_opcao
+
+                case $joker_opcao in
+                    1) echo -e "\nConfigurando funcionalidade: Informações SUJAS\n" ;;
+                    2) echo -e "\nConfigurando funcionalidade: Informações LIMPAS\n" ;;
+                    3) echo -e "\nConfigurando funcionalidade: Templates para LIMPEZA\n" ;;
+                    4) echo -e "\nConfigurando funcionalidade: Comandos de FERRAMENTAS\n" ;;
+                    5) echo -e "\nConfigurando funcionalidade: WORDLISTs\n" ;;
+                    6) echo -e "\nConfigurando funcionalidade: LOGS\n" ;;
+                    0) break ;;
+                    *) echo -e "\n[!] Opção inválida.\n" ;;
+                esac
+            done
             ;;
         *)
             echo -e "\n[!] Opção inválida.\n"
