@@ -76,6 +76,15 @@ show_menu_joker() {
     echo
 }
 
+show_menu_servicos() {
+    echo -e "\n=== Configuração de Serviços ==="
+    echo -e "--------------------------------\n"
+    echo " 1) Serviço para inicializar o banco de dados"
+    echo " 2) Criar o serviço para iniciar uma rotina especifica"
+    echo " 0) Voltar"
+    echo
+}
+
 # ===============================
 # LOOP PRINCIPAL DE NAVEGAÇÃO
 # ===============================
@@ -131,8 +140,23 @@ while true; do
             echo
             ;;
         3)
-            echo -e "\n[*] Configurando serviço de inicialização automática...\n"
-            # lógica correspondente
+            while true; do
+                show_menu_servicos
+                read -p "Escolha uma opção: " servico_opcao
+
+                case $servico_opcao in
+                    1)
+                        echo -e "\n[*] Configurando serviço para o banco de dados...\n"
+                        # Lógica para configurar o serviço do DB
+                        ;;
+                    2)
+                        echo -e "\n[*] Configurando serviço para rotina específica...\n"
+                        # Lógica para configurar a rotina
+                        ;;
+                    0) break ;;
+                    *) echo -e "\n[!] Opção inválida.\n" ;;
+                esac
+            done
             ;;
         4)
             echo -e "\n[*] Configurando diretório para arquivos JSON...\n"
