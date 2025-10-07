@@ -38,5 +38,32 @@
             "insert_info": "{\"insert\": \"bugs\", \"documents\": [{\"name\": \"%s\", \"details\": \"%s\"}]}",
             "select_info": "{\"find\": \"bugs\", \"filter\": {}}"
         }
+    },
+    "Table_Scopes_hackerOne": {
+        "postgres": {
+            "exclude": "DROP TABLE IF EXISTS h1_structured_scopes;",
+            "create": "CREATE TABLE IF NOT EXISTS h1_structured_scopes (id SERIAL PRIMARY KEY, handle VARCHAR(255) NOT NULL, identifier TEXT NOT NULL, asset_type VARCHAR(50), eligible_for_submission BOOLEAN, eligible_for_bounty BOOLEAN, created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP);",
+            "reset": "DROP TABLE IF EXISTS h1_structured_scopes; CREATE TABLE h1_structured_scopes (id SERIAL PRIMARY KEY, handle VARCHAR(255) NOT NULL, identifier TEXT NOT NULL, asset_type VARCHAR(50), eligible_for_submission BOOLEAN, eligible_for_bounty BOOLEAN, created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP);"
+        },
+        "sqlite3": {
+            "exclude": "DROP TABLE IF EXISTS h1_structured_scopes;",
+            "create": "CREATE TABLE IF NOT EXISTS h1_structured_scopes (id INTEGER PRIMARY KEY AUTOINCREMENT, handle TEXT NOT NULL, identifier TEXT NOT NULL, asset_type TEXT, eligible_for_submission INTEGER, eligible_for_bounty INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);",
+            "reset": "DROP TABLE IF EXISTS h1_structured_scopes; CREATE TABLE h1_structured_scopes (id INTEGER PRIMARY KEY AUTOINCREMENT, handle TEXT NOT NULL, identifier TEXT NOT NULL, asset_type TEXT, eligible_for_submission INTEGER, eligible_for_bounty INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);"
+        },
+        "mariadb": {
+            "exclude": "DROP TABLE IF EXISTS h1_structured_scopes;",
+            "create": "CREATE TABLE IF NOT EXISTS h1_structured_scopes (id INT AUTO_INCREMENT PRIMARY KEY, handle VARCHAR(255) NOT NULL, identifier TEXT NOT NULL, asset_type VARCHAR(50), eligible_for_submission BOOLEAN, eligible_for_bounty BOOLEAN, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);",
+            "reset": "DROP TABLE IF EXISTS h1_structured_scopes; CREATE TABLE h1_structured_scopes (id INT AUTO_INCREMENT PRIMARY KEY, handle VARCHAR(255) NOT NULL, identifier TEXT NOT NULL, asset_type VARCHAR(50), eligible_for_submission BOOLEAN, eligible_for_bounty BOOLEAN, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"
+        },
+        "mysql": {
+            "exclude": "DROP TABLE IF EXISTS h1_structured_scopes;",
+            "create": "CREATE TABLE IF NOT EXISTS h1_structured_scopes (id INT AUTO_INCREMENT PRIMARY KEY, handle VARCHAR(255) NOT NULL, identifier TEXT NOT NULL, asset_type VARCHAR(50), eligible_for_submission BOOLEAN, eligible_for_bounty BOOLEAN, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);",
+            "reset": "DROP TABLE IF EXISTS h1_structured_scopes; CREATE TABLE h1_structured_scopes (id INT AUTO_INCREMENT PRIMARY KEY, handle VARCHAR(255) NOT NULL, identifier TEXT NOT NULL, asset_type VARCHAR(50), eligible_for_submission BOOLEAN, eligible_for_bounty BOOLEAN, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"
+        },
+        "mongodb": {
+            "exclude": "{\"drop\": \"h1_structured_scopes\"}",
+            "create": "{\"create\": \"h1_structured_scopes\"}",
+            "reset": "[{\"drop\": \"h1_structured_scopes\"}, {\"create\": \"h1_structured_scopes\"}]"
+        }
     }
 }
