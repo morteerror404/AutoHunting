@@ -119,19 +119,164 @@ configurar_servico_db() {
 
     echo -e "[*] Banco de dados detectado: ${BOLD}${db_service}${NC}"
 
-    echo -e "[*] Habilitando o serviço '${db_service}' para iniciar com o sistema..."
-    if systemctl enable "${db_service}.service"; then
-        echo -e "${GREEN}Serviço habilitado com sucesso.${NC}"
+    read -p "Deseja habilitar o serviço '${db_service}' para iniciar com o sistema? (s/N): " resposta
+    if [[ "$resposta" =~ ^[sS]$ ]]; then
+        echo -e "[*] Habilitando o serviço '${db_service}' para iniciar com o sistema..."
+        if systemctl enable "${db_service}.service"; then
+            echo -e "${GREEN}Serviço habilitado com sucesso.${NC}"
+        else
+            echo -e "${RED}Falha ao habilitar o serviço.${NC}"
+        fi
+
+        echo -e "[*] Iniciando o serviço '${db_service}'..."
+        if systemctl start "${db_service}.service"; then
+            echo -e "${GREEN}Serviço iniciado com sucesso.${NC}"
+        else
+            echo -e "${RED}Falha ao iniciar o serviço.${NC}"
+        fi
     else
-        echo -e "${RED}Falha ao habilitar o serviço.${NC}"
+        echo -e "[*] Operação cancelada pelo usuário."
+    fi
+}
+
+criar_servico_rotina() {
+    verifica_root
+    if ! command -v jq &> /dev/null || ! command -v systemctl &> /dev/null; then
+        echo -e "${RED}Erro: As ferramentas 'jq' e 'systemctl' são necessárias.${NC}"
+        return 1
     fi
 
-    echo -e "[*] Iniciando o serviço '${db_service}'..."
-    if systemctl start "${db_service}.service"; then
-        echo -e "${GREEN}Serviço iniciado com sucesso.${NC}"
-    else
-        echo -e "${RED}Falha ao iniciar o serviço.${NC}"
+    # --- Coleta de Informações ---
+    read -p "Digite um nome para o serviço (ex: capturar-escopos-h1-semanal): " nome_servico_raw
+    local nome_servico
+    nome_servico=$(echo "$nome_servico_raw" | tr -cs 'a-zA-Z0-9' '_' | tr '[:upper:]' '[:lower:]')
+    echo -e "[*] Nome do serviço será: ${BOLD}${nome_servico}${NC}"
+
+    local order_templates_path
+    order_templates_path=$(jq -r '.archives."maestro_order_templates"' "$ENV_JSON_PATH")
+    if [ ! -f "$order_templates_path" ]; then
+        echo -e "${RED}Erro: Arquivo de templates de ordem não encontrado em '$order_templates_path'. Verifique seu env.json.${NC}"
+        return 1
     fi
+
+    echo -e "\nTemplates de ordem disponíveis em '$order_templates_path':"
+    local templates
+    mapfile -t templates < <(jq -r 'keys[]' "$order_templates_path")
+    for i in "${!templates[@]}"; do
+        echo " $((i+1))) ${templates[$i]}"
+    done
+    read -p "Escolha o template de ordem a ser executado: " template_choice
+    local template_escolhido="${templates[$((template_choice-1))]}"
+    if [ -z "$template_escolhido" ]; then
+        echo -e "${RED}Opção inválida.${NC}"; return 1
+    fi
+
+    local tokens_path
+    tokens_path=$(jq -r '.archives."tokens_json"' "$ENV_JSON_PATH")
+    echo -e "\nPlataformas disponíveis em '$tokens_path':"
+    local platforms
+    mapfile -t platforms < <(jq -r 'keys[]' "$tokens_path")
+    for i in "${!platforms[@]}"; do
+        echo " $((i+1))) ${platforms[$i]}"
+    done
+    read -p "Escolha a plataforma para a rotina: " platform_choice
+    local plataforma_escolhida="${platforms[$((platform_choice-1))]}"
+    if [ -z "$plataforma_escolhida" ]; then
+        echo -e "${RED}Opção inválida.${NC}"; return 1
+    fi
+
+    echo -e "\nEscolha a frequência de execução:"
+    echo " 1) Diariamente"
+    echo " 2) Semanalmente"
+    echo " 3) Mensalmente"
+    read -p "Opção: " freq_choice
+
+    local on_calendar=""
+    local marker_format=""
+    case $freq_choice in
+        1) on_calendar="daily"; marker_format="%Y-%m-%d" ;;
+        2) 
+            read -p "Digite o dia da semana (ex: Mon, Tue, Wed, Thu, Fri, Sat, Sun): " dia_semana
+            on_calendar="${dia_semana} *-*-* 02:00:00"; marker_format="%Y-%W" ;; # %W = semana do ano
+        3) on_calendar="monthly"; marker_format="%Y-%m" ;;
+        *) echo -e "${RED}Opção inválida.${NC}"; return 1 ;;
+    esac
+
+    # --- Criação dos Arquivos ---
+    local autohunting_dir
+    autohunting_dir=$(dirname "$(realpath "$0")")
+    local service_markers_dir="/var/lib/autohunt/service_markers"
+    mkdir -p "$service_markers_dir"
+
+    # 1. Criar o script wrapper
+    local wrapper_path="/usr/local/bin/${nome_servico}_runner.sh"
+    echo -e "[*] Criando script wrapper em '$wrapper_path'..."
+    cat > "$wrapper_path" <<EOF
+#!/bin/bash
+set -euo pipefail
+
+MARKER_DIR="$service_markers_dir"
+MARKER_FILE="\$MARKER_DIR/${nome_servico}_\$(date +'$marker_format').marker"
+
+if [ -f "\$MARKER_FILE" ]; then
+    echo "[\$(date)] Rotina '${nome_servico}' já executada neste período. Saindo."
+    exit 0
+fi
+
+echo "[\$(date)] Iniciando rotina '${nome_servico}'..."
+cd "$autohunting_dir"
+
+# Cria o arquivo de ordem para o maestro
+jq -n --arg platform "$plataforma_escolhida" --arg task "$template_escolhido" \
+  '.platform = \$platform | .task = \$task' > order.json
+
+# Executa o maestro (assumindo que o binário está na raiz do projeto)
+if ./maestro; then
+    echo "[\$(date)] Rotina '${nome_servico}' executada com sucesso."
+    touch "\$MARKER_FILE"
+else
+    echo "[\$(date)] Erro ao executar a rotina '${nome_servico}'."
+    exit 1
+fi
+EOF
+    chmod +x "$wrapper_path"
+
+    # 2. Criar o arquivo .service
+    local service_path="/etc/systemd/system/${nome_servico}.service"
+    echo -e "[*] Criando arquivo de serviço em '$service_path'..."
+    cat > "$service_path" <<EOF
+[Unit]
+Description=Serviço agendado do AutoHunting para a rotina '${nome_servico_raw}'
+
+[Service]
+Type=oneshot
+ExecStart=$wrapper_path
+User=$(logname) # Executa como o usuário que configurou
+EOF
+
+    # 3. Criar o arquivo .timer
+    local timer_path="/etc/systemd/system/${nome_servico}.timer"
+    echo -e "[*] Criando arquivo de timer em '$timer_path'..."
+    cat > "$timer_path" <<EOF
+[Unit]
+Description=Timer para a rotina '${nome_servico_raw}' do AutoHunting
+
+[Timer]
+OnCalendar=$on_calendar
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+    # --- Ativação ---
+    echo -e "[*] Recarregando, habilitando e iniciando o timer..."
+    systemctl daemon-reload
+    systemctl enable "${nome_servico}.timer"
+    systemctl start "${nome_servico}.timer"
+
+    echo -e "${GREEN}Serviço e timer '${nome_servico}' configurados com sucesso!${NC}"
+    systemctl list-timers --all | grep "$nome_servico"
 }
 # ===============================
 # LOOP PRINCIPAL DE NAVEGAÇÃO
@@ -199,7 +344,7 @@ while true; do
                         ;;
                     2)
                         echo -e "\n[*] Configurando serviço para rotina específica...\n"
-                        # Lógica para configurar a rotina
+                        criar_servico_rotina
                         ;;
                     0) break ;;
                     *) echo -e "\n[!] Opção inválida.\n" ;;
