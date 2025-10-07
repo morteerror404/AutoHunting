@@ -18,8 +18,11 @@ import (
 )
 
 // -----------------------------
-// Estrutura do resultado final
+// Estruturas de Dados
 // -----------------------------
+
+// SiteResult define a estrutura de dados para o resultado da verificação de um único site.
+// Esta estrutura é usada para serializar os resultados em formato JSON.
 type SiteResult struct {
 	Input       string `json:"input"`
 	ResolvedURL string `json:"resolved_url"`
@@ -31,9 +34,8 @@ type SiteResult struct {
 	ElapsedMS   int64  `json:"elapsed_ms"`
 }
 
-// -----------------------------
-// Estrutura para tokens.json
-// -----------------------------
+// Tokens espelha a estrutura do arquivo `tokens.json`, armazenando as credenciais
+// de API necessárias para autenticar nas plataformas de Bug Bounty.
 type Tokens struct {
 	HackerOne struct {
 		Username string `json:"username"`
@@ -53,6 +55,9 @@ type Tokens struct {
 // -----------------------------
 // Helpers
 // -----------------------------
+
+// ensureScheme garante que uma URL string tenha um esquema (http:// ou https://).
+// Se nenhum esquema estiver presente, adiciona "https://" como padrão.
 func ensureScheme(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -64,7 +69,8 @@ func ensureScheme(raw string) string {
 	return "https://" + raw
 }
 
-// parse <title> do HTML
+// parseTitle extrai o conteúdo da tag <title> de um corpo de resposta HTML.
+// Ele lê de um io.Reader e para assim que encontra o título ou o fim do arquivo.
 func parseTitle(r io.Reader) (string, error) {
 	z := html.NewTokenizer(r)
 	for {
@@ -88,6 +94,7 @@ func parseTitle(r io.Reader) (string, error) {
 	}
 }
 
+// truncate limita uma string a um número `n` de caracteres, adicionando "..." se for cortada.
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
@@ -98,6 +105,11 @@ func truncate(s string, n int) string {
 // -----------------------------
 // Workers HTTP
 // -----------------------------
+
+// worker é a função executada por cada goroutine concorrente para processar jobs.
+// Ele recebe URLs de um canal `jobs`, realiza a requisição HTTP, processa a resposta,
+// e envia o resultado (SiteResult) para o canal `results`.
+// Respeita um `delay` entre as requisições para evitar rate limiting.
 func worker(id int, jobs <-chan string, results chan<- SiteResult, client *http.Client, path string, delay time.Duration, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for raw := range jobs {
@@ -165,7 +177,9 @@ func worker(id int, jobs <-chan string, results chan<- SiteResult, client *http.
 // HackerOne: programas ativos + structured scopes
 // -----------------------------
 
-// fetchHackerOneProgramHandles busca handles dos programas acessíveis ao hacker (filtra public_mode)
+// fetchHackerOneProgramHandles busca na API do HackerOne a lista de "handles" (identificadores únicos)
+// de todos os programas públicos. Ele se autentica usando as credenciais fornecidas e filtra
+// os programas que estão em "public_mode".
 func fetchHackerOneProgramHandles(username, apiKey string) ([]string, error) {
 	client := &http.Client{Timeout: 20 * time.Second}
 	req, _ := http.NewRequest("GET", "https://api.hackerone.com/v1/hackers/programs", nil)
@@ -203,7 +217,12 @@ func fetchHackerOneProgramHandles(username, apiKey string) ([]string, error) {
 	return handles, nil
 }
 
-// fetchHackerOneStructuredScopes consulta /structured_scopes e retorna identifiers filtrados (eligible_for_submission, eligible_for_bounty e asset types comuns)
+// fetchHackerOneStructuredScopes, para um determinado `handle` de programa, consulta o endpoint
+// de escopos estruturados da API do HackerOne.
+// A função filtra os ativos para retornar apenas aqueles que são:
+// 1. Elegíveis para submissão (`eligible_for_submission`).
+// 2. Elegíveis para recompensa (`eligible_for_bounty`).
+// 3. De tipos relevantes para automação (`URL`, `DOMAIN`, `CIDR`).
 func fetchHackerOneStructuredScopes(handle, username, apiKey string) ([]string, error) {
 	endpoint := fmt.Sprintf("https://api.hackerone.com/v1/hackers/programs/%s/structured_scopes", url.PathEscape(handle))
 	client := &http.Client{Timeout: 20 * time.Second}
@@ -255,7 +274,8 @@ func fetchHackerOneStructuredScopes(handle, username, apiKey string) ([]string, 
 	return out, nil
 }
 
-// helper: escreve slice de strings em arquivo (uma linha por item)
+// writeLinesToFile é uma função auxiliar que escreve um slice de strings em um arquivo,
+// com cada string em uma nova linha. Ele cria o arquivo se não existir e sobrescreve o conteúdo.
 func writeLinesToFile(path string, lines []string) error {
 	f, err := os.Create(path)
 	if err != nil {
@@ -274,7 +294,9 @@ func writeLinesToFile(path string, lines []string) error {
 	return w.Flush()
 }
 
-// writeLinesRotate renomeia o arquivo existente para <basename>-old.txt e cria um novo.
+// writeLinesRotate escreve linhas em um arquivo, mas antes renomeia qualquer arquivo
+// existente com o mesmo nome para `<basename>-old.txt`. Isso serve como um mecanismo
+// simples de backup da execução anterior.
 func writeLinesRotate(path string, lines []string) error {
 	if _, err := os.Stat(path); err == nil {
 		ext := filepath.Ext(path)
@@ -292,7 +314,9 @@ func writeLinesRotate(path string, lines []string) error {
 }
 
 // RunRequestAPI é o ponto de entrada para o maestro.
-// Ele busca escopos para uma plataforma específica e os salva em um arquivo.
+// Ele orquestra a coleta de escopos para uma plataforma específica (`platform`)
+// usando as credenciais fornecidas (`tokens`) e salva os resultados brutos
+// no caminho especificado (`apiDirtResultsPath`).
 func RunRequestAPI(apiDirtResultsPath string, platform string, tokens Tokens) error {
 	var allScopes []string
 	var err error
