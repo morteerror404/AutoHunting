@@ -1,9 +1,282 @@
 {
     "nmap":{
-        "nmap_slow":"-vvv -sT -sV -sS",
-        "nmap_steath": "-sF -Pn --scan-delay 1000ms -f --mtu 24 -D RND:5,ME -p 80,443"
+        "nmap_slow": {
+            "args": "-vvv -sT -sV -sS",
+            "comment": "Scan TCP Connect, com detecção de versão e serviço, em modo verboso. Ex: nmap -vvv -sT -sV -sS {TARGET}"
+        },
+        "nmap_steath": {
+            "args": "-sF -Pn --scan-delay 1000ms -f --mtu 24 -D RND:5,ME -p 80,443",
+            "comment": "Scan furtivo (FIN) para portas 80 e 443 com ofuscação e sem ping. Ex: nmap -sF ... {TARGET}"
+        }
     },
     "ffuf":{
-        "ffuf_common": ""
+        "common_dir": {
+            "args": "-u http://{TARGET}/FUZZ -w {WORDLIST_PATH}",
+            "comment": "Fuzzing de diretórios em um alvo HTTP. Ex: ffuf -u http://example.com/FUZZ -w list.txt"
+        }
+    },
+    "ping": {
+        "default": {
+            "args": "",
+            "comment": "Ping padrão no alvo. Ex: ping {TARGET}"
+        },
+        "resolve_hostname": {
+            "args": "-a",
+            "comment": "Ping tentando resolver o nome do host a partir do IP. Ex: ping -a {IP}"
+        }
+    },
+    "nslookup": {
+        "default": {
+            "args": "",
+            "comment": "Consulta DNS básica no alvo. Ex: nslookup {TARGET}"
+        }
+    },
+    "dig": {
+        "default": {
+            "args": "",
+            "comment": "Consulta DNS avançada no alvo. Ex: dig {TARGET}"
+        }
+    },
+    "curl": {
+        "with_header": {
+            "args": "-H",
+            "comment": "Permite adicionar um cabeçalho customizado. Ex: curl -H 'X-Custom: value' {TARGET}"
+        }
+    },
+    "gitleaks": {
+        "detect_local_report": {
+            "args": "detect --source . -f json -r {REPORT_PATH} --no-banner --redact",
+            "comment": "Detecta segredos no diretório atual e gera um relatório JSON."
+        },
+        "detect_path_report": {
+            "args": "detect --source {SOURCE_PATH} -f json -r {REPORT_PATH} --no-banner --redact",
+            "comment": "Detecta segredos em um caminho específico e gera um relatório JSON."
+        },
+        "detect_verbose": {
+            "args": "detect --source {SOURCE_PATH} -v --no-banner",
+            "comment": "Detecta segredos em um caminho específico com saída detalhada."
+        }
+    },
+    "theHarvester": {
+        "google_search": {
+            "args": "-d {TARGET} -l 500 -b google",
+            "comment": "Coleta informações de OSINT usando o Google como fonte."
+        }
+    },
+    "amass": {
+        "enum": {
+            "args": "enum -d {TARGET}",
+            "comment": "Enumeração passiva e ativa de subdomínios para um alvo."
+        }
+    },
+    "spiderfoot": {
+        "basic_scan": {
+            "args": "-s {TARGET} -m sfp_domain_whois,sfp_dns,sfp_nameserver",
+            "comment": "Scan básico de OSINT com SpiderFoot para um alvo."
+        }
+    },
+    "metagoofil": {
+        "doc_search": {
+            "args": "-d {TARGET} -t pdf,doc -l 100 -o /tmp/autohunting_metagoofil",
+            "comment": "Busca por documentos (pdf, doc) em um domínio para extrair metadados."
+        }
+    },
+    "sherlock": {
+        "user_search": {
+            "args": "{USERNAME}",
+            "comment": "Busca por um nome de usuário em diversas redes sociais."
+        }
+    },
+    "shodan": {
+        "host_lookup": {
+            "args": "host {IP}",
+            "comment": "Busca todas as informações de um IP específico. Ex: shodan host 8.8.8.8"
+        },
+        "search_by_country": {
+            "args": "search {QUERY} country:{COUNTRY_CODE}",
+            "comment": "Busca por um termo em um país específico. Ex: shodan search apache country:BR"
+        },
+        "search_by_port": {
+            "args": "search {QUERY} port:{PORT}",
+            "comment": "Busca por um termo em uma porta específica. Ex: shodan search nginx port:8080"
+        },
+        "search_by_net": {
+            "args": "search {QUERY} net:{CIDR}",
+            "comment": "Busca por um termo em um range de rede (CIDR). Ex: shodan search port:22 net:192.168.1.0/24"
+        },
+        "search_by_ssl_cn": {
+            "args": "search ssl.cert.subject.cn:{DOMAIN}",
+            "comment": "Encontra ativos pelo Common Name do certificado SSL. Ex: shodan search ssl.cert.subject.cn:google.com"
+        },
+        "search_by_product_version": {
+            "args": "search product:{PRODUCT} version:{VERSION}",
+            "comment": "Busca por uma versão específica de um produto. Ex: shodan search product:nginx version:1.21.0"
+        },
+        "search_http_component": {
+            "args": "search http.component:{COMPONENT}",
+            "comment": "Busca por um componente web (framework/biblioteca). Ex: shodan search http.component:wordpress"
+        },
+        "search_open_rdp_screenshot": {
+            "args": "search os:windows port:3389 has_screenshot:true",
+            "comment": "Encontra servidores Windows com RDP exposto e que possuem captura de tela."
+        },
+        "search_open_smb": {
+            "args": "search 'authentication disabled' port:445",
+            "comment": "Encontra compartilhamentos de rede (SMB) com autenticação desabilitada."
+        }
+    },
+    "subfinder": {
+        "domain_enum": {
+            "args": "-d {TARGET}",
+            "comment": "Enumera subdomínios para um domínio alvo. Ex: subfinder -d example.com"
+        }
+    },
+    "nuclei": {
+        "scan_target": {
+            "args": "-u {TARGET}",
+            "comment": "Executa templates do Nuclei contra uma única URL. Ex: nuclei -u http://test.com"
+        },
+        "scan_list": {
+            "args": "-l {TARGET_LIST} -o {OUTPUT_FILE}",
+            "comment": "Executa templates do Nuclei contra uma lista de URLs. Ex: nuclei -l urls.txt -o nuclei_results.txt"
+        }
+    },
+    "httpx": {
+        "probe_list": {
+            "args": "-json -o {OUTPUT_FILE}",
+            "comment": "Verifica quais hosts de uma lista estão ativos e retorna em JSON. Ex: cat hosts.txt | httpx -json -o live_hosts.json"
+        }
+    },
+    "assetfinder": {
+        "subs_only": {
+            "args": "--subs-only {TARGET}",
+            "comment": "Encontra subdomínios de um alvo. Ex: assetfinder --subs-only example.com"
+        }
+    },
+    "gau": {
+        "fetch_urls": {
+            "args": "{TARGET}",
+            "comment": "Obtém URLs conhecidas para um domínio de vários provedores. Ex: gau example.com"
+        }
+    },
+    "waybackurls": {
+        "fetch_urls": {
+            "args": "{TARGET}",
+            "comment": "Obtém URLs do Wayback Machine para um domínio. Ex: waybackurls example.com"
+        }
+    },
+    "gobuster": {
+        "dir_bruteforce": {
+            "args": "dir -u {URL} -w {WORDLIST_PATH}",
+            "comment": "Força bruta de diretórios em uma URL. Ex: gobuster dir -u http://example.com -w common.txt"
+        }
+    },
+    "dalfox": {
+        "scan_url": {
+            "args": "url {URL}",
+            "comment": "Escaneia uma URL em busca de vulnerabilidades XSS. Ex: dalfox url http://test.com?q=1"
+        }
+    },
+    "aquatone": {
+        "screenshot": {
+            "args": "-out {OUTPUT_DIR}",
+            "comment": "Tira screenshots de uma lista de URLs fornecida via stdin. Ex: cat urls.txt | aquatone -out screenshots"
+        }
+    },
+    "linkfinder": {
+        "find_in_js": {
+            "args": "-i {URL_OR_FILE} -o cli",
+            "comment": "Encontra endpoints em arquivos JavaScript. Ex: linkfinder -i http://example.com/main.js -o cli"
+        }
+    },
+    "wafw00f": {
+        "identify_waf": {
+            "args": "{URL}",
+            "comment": "Identifica o Web Application Firewall (WAF) de um site. Ex: wafw00f http://example.com"
+        }
+    },
+    "xsstrike": {
+        "scan_url": {
+            "args": "-u {URL}",
+            "comment": "Scanner de XSS avançado para uma URL. Ex: xsstrike -u http://test.com?q=1"
+        }
+    },
+    "katana": {
+        "crawl": {
+            "args": "-u {URL} -d 5",
+            "comment": "Faz o crawling de um site com profundidade 5. Ex: katana -u http://example.com -d 5"
+        }
+    },
+    "reconftw": {
+        "full_scan": {
+            "args": "-d {TARGET} -a",
+            "comment": "Executa um fluxo completo de reconhecimento automatizado. Ex: reconftw -d example.com -a"
+        }
+    },
+    "eyewitness": {
+        "screenshot_file": {
+            "args": "-f {FILE_WITH_URLS} -d {OUTPUT_DIR} --web",
+            "comment": "Tira screenshots de URLs de um arquivo. Ex: eyewitness -f urls.txt -d screenshots --web"
+        }
+    },
+    "gf": {
+        "find_pattern": {
+            "args": "{PATTERN_NAME}",
+            "comment": "Filtra stdin por um padrão GF específico. Ex: cat urls.txt | gf ssrf"
+        }
+    },
+    "kiterunner": {
+        "bruteforce_api": {
+            "args": "scan -w {WORDLIST_PATH} -u {URL}",
+            "comment": "Força bruta de endpoints de API. Ex: kiterunner scan -w routes.txt -u https://api.example.com"
+        }
+    },
+    "gopherus": {
+        "generate_payload": {
+            "args": "--exploit",
+            "comment": "Gera payloads de Gopher para várias aplicações. Requer interação."
+        }
+    },
+    "lfisuite": {
+        "scan": {
+            "args": "--scan",
+            "comment": "Inicia o scanner de LFI. Requer interação para configurar o alvo."
+        }
+    },
+    "fimap": {
+        "scan_url": {
+            "args": "-u {URL}",
+            "comment": "Escaneia uma URL em busca de vulnerabilidades LFI/RFI. Ex: fimap -u 'http://test.com/page.php?file=1'"
+        }
+    },
+    "cmseek": {
+        "scan_url": {
+            "args": "-u {URL}",
+            "comment": "Detecta o CMS de uma URL. Ex: cmseek -u http://example.com"
+        }
+    },
+    "gitdumper": {
+        "dump": {
+            "args": "{URL}/.git/ {OUTPUT_DIR}",
+            "comment": "Faz o dump de um repositório .git exposto. Ex: gitdumper http://example.com/.git/ dumped_repo"
+        }
+    },
+    "awsbucketdump": {
+        "dump": {
+            "args": "-l {BUCKET_LIST_FILE} -g -d",
+            "comment": "Faz o dump de uma lista de buckets S3. Ex: awsbucketdump -l buckets.txt -g -d"
+        }
+    },
+    "jq": {
+        "pretty_print": {
+            "args": ".",
+            "comment": "Formata um JSON de forma legível. Ex: cat data.json | jq ."
+        }
+    },
+    "metasploit": {
+        "console": {
+            "args": "-q",
+            "comment": "Inicia o console do Metasploit em modo silencioso. Ex: msfconsole -q"
+        }
     }
 }

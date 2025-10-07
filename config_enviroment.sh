@@ -82,8 +82,8 @@ show_menu_joker() {
     echo " 2) Diretório de Resultados Limpos (tool_cleaned_dir)"
     echo " 3) Diretório de Escopos Selecionados (escopos_selecionados)"
     echo " 4) Diretório de API (Resultados Brutos) (api_dirt_results_path)"
-    echo " 5) WORDLISTs"
-    echo " 6) LOGS"
+    echo " 5) Diretório de WORDLISTs"
+    echo " 6) Diretório de LOGS"
     echo " 0) Voltar"
     echo
 }
@@ -99,9 +99,56 @@ show_menu_servicos() {
     echo
 }
 
+show_menu_Wordlist() {
+    echo -e "\n=== Caminhos para wordlist ==="
+    echo -e "--------------------------------\n"
+    echo " 1) Deseja configurar manualmente "
+    echo " 2) Mapear cada wordlists automaticamente"
+    echo " 0) Voltar"
+    echo
+}
+
+show_menu_logs() {
+    echo -e "\n=== Configuração de Logs ==="
+    echo -e "--------------------------------\n"
+    echo " 1) Definir diretório de logs"
+    echo " 2) Configurar tipo de saída do log (Arquivo/Terminal)"
+    echo " 3) Configurar política de retenção de logs"
+    echo " 0) Voltar"
+    echo
+}
+
 # ===============================
 # Funções de Lógica
 # ===============================
+
+check_and_set_wordlist_dir() {
+    if ! command -v jq &> /dev/null; then
+        echo -e "${RED}Erro: 'jq' não encontrado. Esta função requer jq.${NC}"
+        return 1
+    fi
+
+    if [ ! -f "$ENV_JSON_PATH" ]; then
+        echo -e "${RED}Erro: Arquivo de configuração '$ENV_JSON_PATH' não encontrado.${NC}"
+        return 1
+    fi
+
+    local current_wordlist_dir
+    current_wordlist_dir=$(jq -r '.path.wordlist_dir' "$ENV_JSON_PATH")
+
+    if [ -n "$current_wordlist_dir" ] && [ -d "$current_wordlist_dir" ]; then
+        echo -e "${GREEN}Diretório de wordlists já configurado em: '$current_wordlist_dir'${NC}"
+        return 0
+    fi
+
+    echo -e "\n${YELLOW}O diretório de wordlists não está configurado ou não foi encontrado.${NC}"
+    read -p "Por favor, informe o diretório base para as wordlists (ex: /usr/share/wordlists): " new_wordlist_dir
+
+    if [ -n "$new_wordlist_dir" ]; then
+        update_json_value "$ENV_JSON_PATH" ".path.wordlist_dir" "$new_wordlist_dir"
+        mkdir -p "$new_wordlist_dir" # Garante que o diretório seja criado
+    fi
+}
 
 update_json_value() {
     local file_path="$1"
@@ -410,6 +457,9 @@ excluir_rotina() {
 # ===============================
 # LOOP PRINCIPAL DE NAVEGAÇÃO
 # ===============================
+
+check_and_set_wordlist_dir # Adiciona a verificação inicial aqui
+
 while true; do
     show_menu_principal
     read -p "Escolha uma opção: " opcao
@@ -553,18 +603,177 @@ while true; do
                                 2) key_to_update="tool_cleaned_dir" ;;
                                 3) key_to_update="escopos_selecionados" ;;
                                 4) key_to_update="api_dirt_results_path" ;;
-                                5) key_to_update="wordlist_dir" ;;
+                                5) 
+                                    while true; do
+                                        show_menu_Wordlist
+                                        read -p "Escolha uma opção para Wordlists: " wordlist_opcao
+                                        case $wordlist_opcao in
+                                            1)
+                                                read -p "Deseja o modo silencioso (salva o caminho com o nome do arquivo) ou assistido (pergunta um nome para cada)? (s/A): " modo_wordlist
+                                                local output_file="/tmp/autohunting_wordlists_manual.txt"
+                                                echo -e "[*] Os caminhos serão salvos em '$output_file'. Digite 'sair' para terminar."
+
+                                                while true; do
+                                                    read -p "Informe o caminho para o arquivo .txt da wordlist: " wordlist_path
+                                                    if [[ "$wordlist_path" == "sair" ]]; then
+                                                        break
+                                                    fi
+
+                                                    if [[ ! "$wordlist_path" == *.txt ]]; then
+                                                        echo -e "${RED}Erro: O caminho deve terminar com .txt${NC}"
+                                                        continue
+                                                    fi
+
+                                                    if [ ! -f "$wordlist_path" ]; then
+                                                        echo -e "${RED}Erro: Arquivo não encontrado em '$wordlist_path'${NC}"
+                                                        continue
+                                                    fi
+
+                                                    local wordlist_name
+                                                    wordlist_name=$(basename "$wordlist_path" .txt)
+
+                                                    if [[ ! "$modo_wordlist" =~ ^[sS]$ ]]; then
+                                                        # Modo Assistido
+                                                        read -p "Digite um nome para esta wordlist (padrão: '$wordlist_name'): " custom_name
+                                                        if [ -n "$custom_name" ]; then
+                                                            wordlist_name="$custom_name"
+                                                        fi
+                                                        echo "$wordlist_name:$wordlist_path" >> "$output_file"
+                                                        echo -e "${GREEN}Wordlist '$wordlist_name' adicionada.${NC}"
+                                                    else
+                                                        # Modo Silencioso
+                                                        echo "$wordlist_name:$wordlist_path" >> "$output_file"
+                                                        echo -e "${GREEN}Wordlist '$wordlist_name' adicionada (modo silencioso).${NC}"
+                                                    fi
+                                                done
+                                                echo -e "\n${GREEN}Configuração manual de wordlists concluída. Arquivo de referência: $output_file${NC}"
+                                                echo -e "Para usar esses nomes no 'commands.json', você pode referenciá-los no futuro."
+                                                # A lógica de definir um único diretório foi removida para dar lugar a esta mais flexível.
+                                                # Se ainda precisar, pode ser adicionada como uma opção separada.
+                                                break
+                                                ;;
+                                            2)
+                                                echo -e "\n[*] Iniciando busca automática por arquivos .txt..."
+                                                local output_file="/tmp/autohunting_wordlists_auto.txt"
+                                                : > "$output_file" # Limpa o arquivo antes de começar
+                                                
+                                                find . -type f -name "*.txt" -print0 | while IFS= read -r -d '' file; do
+                                                    echo "Encontrado: $file"
+                                                    local name
+                                                    name=$(basename "$file" .txt)
+                                                    echo "$name:$file" >> "$output_file"
+                                                done
+                                                
+                                                echo -e "\n${GREEN}Busca concluída. Os caminhos para as wordlists foram salvos em: $output_file${NC}"
+                                                echo -e "Você pode usar este arquivo como referência para configurar suas ferramentas."
+                                                break # Sai do loop de wordlist
+                                                ;;
+                                            0) break ;; # Sai do loop de wordlist
+                                            *) echo -e "\n[!] Opção inválida.\n" ;;
+                                        esac
+                                    done
+                                    continue # Volta para o menu de caminhos
+                                    ;;
                                 6) key_to_update="log_dir" ;;
                                 0) break ;;
                                 *) echo -e "\n[!] Opção inválida.\n"; continue ;;
                             esac
+                        done
+                        ;;
+                    0)
+                        break
+                        ;;
+                    *)
+                        echo -e "\n[!] Opção inválida.\n"
+                        ;;
+                esac
+            done
+            ;;
+        6)
+            MENU_TYPE="funcionalidade específica"
+            while true; do
+                show_menu_joker
+                read -p "Escolha uma opção: " joker_opcao
 
-                            read -p "Digite o novo caminho para '$key_to_update': " new_path
-                            if [ -n "$new_path" ]; then
-                                update_json_value "$ENV_JSON_PATH" ".path.$key_to_update" "$new_path"
-                            else
-                                echo -e "${YELLOW}Nenhum caminho fornecido. Operação cancelada.${NC}"
-                            fi
+                case $joker_opcao in
+                    1) echo -e "\nConfigurando funcionalidade: Informações SUJAS\n" ;;
+                    2) echo -e "\nConfigurando funcionalidade: Informações LIMPAS\n" ;;
+                    3) echo -e "\nConfigurando funcionalidade: Templates para LIMPEZA\n" ;;
+                    4) echo -e "\nConfigurando funcionalidade: Comandos de FERRAMENTAS\n" ;;
+                    5) echo -e "\nConfigurando funcionalidade: WORDLISTs\n" ;;
+                    6) 
+                        while true; do
+                            show_menu_logs
+                            read -p "Escolha uma opção para Logs: " log_opcao
+                            case $log_opcao in
+                                1)
+                                    read -p "Digite o novo caminho para o diretório de logs: " new_log_path
+                                    if [ -n "$new_log_path" ]; then
+                                        update_json_value "$ENV_JSON_PATH" ".path.log_dir" "$new_log_path"
+                                    else
+                                        echo -e "${YELLOW}Nenhum caminho fornecido. Operação cancelada.${NC}"
+                                    fi
+                                    ;;
+                                2)
+                                    read -p "Deseja que o log seja salvo em arquivo ou exibido no terminal? (Arquivo/Terminal): " tipo_log
+                                    if [[ "$tipo_log" =~ ^[Tt] ]]; then
+                                        local terminal_shell
+                                        terminal_shell=$(echo "$SHELL")
+                                        local terminal_path
+                                        terminal_path=$(command -v "$(basename "$terminal_shell")")
+                                        echo -e "[*] Saída configurada para o terminal."
+                                        echo -e "    Seu terminal atual é: ${BOLD}${terminal_shell}${NC}"
+                                        echo -e "    Localizado em: ${BOLD}${terminal_path}${NC}"
+                                        # Aqui você pode adicionar lógica para salvar essa preferência, se necessário
+                                    else
+                                        echo -e "[*] Saída configurada para salvar em arquivo (padrão)."
+                                    fi
+                                    ;;
+                                3)
+                                    echo -e "\n${YELLOW}Funcionalidade de política de retenção de logs ainda não implementada.${NC}"
+                                    ;;
+                                0) break ;;
+                                *) echo -e "\n[!] Opção inválida.\n" ;;
+                            esac
+                        done
+                        ;;
+                    0) break ;;
+                    *) echo -e "\n[!] Opção inválida.\n" ;;
+                esac
+            done
+            ;;
+        *)
+            echo -e "\n[!] Opção inválida.\n"
+            ;;
+    esac
+done
+                                                fi
+                                                break # Sai do loop de wordlist
+                                                ;;
+                                            2)
+                                                echo -e "\n[*] Iniciando busca automática por arquivos .txt..."
+                                                local output_file="/tmp/autohunting_wordlists.txt"
+                                                : > "$output_file" # Limpa o arquivo antes de começar
+                                                
+                                                find . -type f -name "*.txt" -print0 | while IFS= read -r -d '' file; do
+                                                    echo "Encontrado: $file"
+                                                    echo "$file" >> "$output_file"
+                                                done
+                                                
+                                                echo -e "\n${GREEN}Busca concluída. Os caminhos para as wordlists foram salvos em: $output_file${NC}"
+                                                echo -e "Você pode usar este arquivo como referência para configurar suas ferramentas."
+                                                break # Sai do loop de wordlist
+                                                ;;
+                                            0) break ;; # Sai do loop de wordlist
+                                            *) echo -e "\n[!] Opção inválida.\n" ;;
+                                        esac
+                                    done
+                                    continue # Volta para o menu de caminhos
+                                    ;;
+                                6) key_to_update="log_dir" ;;
+                                0) break ;;
+                                *) echo -e "\n[!] Opção inválida.\n"; continue ;;
+                            esac
                         done
                         ;;
                     0)

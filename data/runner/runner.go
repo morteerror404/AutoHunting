@@ -54,17 +54,12 @@ type Service struct {
 	Version string `xml:"version,attr,omitempty"`
 }
 
-// Run executa varreduras com a ferramenta especificada (nmap ou ffuf)
-func Run(targetsFile, args, outDir, tool string) error {
-	// Ler alvos do arquivo
-	data, err := os.ReadFile(targetsFile)
-	if err != nil {
-		return fmt.Errorf("erro ao ler arquivo de alvos %s: %w", targetsFile, err)
-	}
-	targets := strings.Split(strings.TrimSpace(string(data)), "\n")
-	for i := range targets {
-		targets[i] = strings.TrimSpace(targets[i])
-	}
+// Run executa uma ferramenta de linha de comando contra uma lista de alvos de forma concorrente.
+// tool: O nome do binário a ser executado (ex: "nmap", "shodan").
+// argTemplate: A string de argumentos com placeholders (ex: "host {IP}").
+// targets: Uma lista de alvos (ex: ["8.8.8.8", "1.1.1.1"]).
+// outDir: O diretório para salvar os resultados brutos.
+func Run(tool, argTemplate string, targets []string, outDir string) error {
 
 	// Criar pasta de saída
 	if err := os.MkdirAll(outDir, 0755); err != nil {
@@ -83,23 +78,22 @@ func Run(targetsFile, args, outDir, tool string) error {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
 
-			filename := fmt.Sprintf("%s_%s_%s.txt", tool, sanitizeFilename(target), time.Now().Format("20060102150405"))
-			outputPath := filepath.Join(outDir, filename)
+			// 1. Substituir placeholders no template de argumentos.
+			// Esta lógica pode ser expandida para outros placeholders como {DOMAIN}, {USERNAME}, etc.
+			finalArgsStr := strings.ReplaceAll(argTemplate, "{IP}", target)
+			finalArgsStr = strings.ReplaceAll(finalArgsStr, "{TARGET}", target)
+			cmdArgs := strings.Fields(finalArgsStr)
 
-			var cmdArgs []string
-			if tool == "nmap" {
-				cmdArgs = append(strings.Fields(args), "-oX", outputPath, target)
-			} else if tool == "ffuf" {
-				wordlist := strings.Replace(args, "FUZZ", target, 1)
-				cmdArgs = append(strings.Fields(wordlist), "-o", outputPath)
-			}
-
+			// 2. Executar o comando.
 			output, err := runCommandContext(ctx, tool, cmdArgs...)
 			if err != nil {
-				results <- fmt.Sprintf("Worker %d: erro ao escanear %s com %s: %v", id, target, tool, err)
-				continue
+				results <- fmt.Sprintf("Worker %d: erro ao escanear '%s' com '%s': %v", id, target, tool, err)
+				return // Usar return em vez de continue para sair do loop do worker
 			}
 
+			// 3. Salvar a saída bruta.
+			filename := fmt.Sprintf("%s_%s_%s.txt", tool, sanitizeFilename(target), time.Now().Format("20060102150405"))
+			outputPath := filepath.Join(outDir, filename)
 			var report string
 			if tool == "nmap" {
 				report = parseNmapXML(output, target)
@@ -107,12 +101,11 @@ func Run(targetsFile, args, outDir, tool string) error {
 				report = string(output) // Para ffuf, usar saída bruta
 			}
 			results <- fmt.Sprintf("Worker %d: %s\n%s", id, target, report)
-
-			// Salvar saída bruta
 			if err := os.WriteFile(outputPath, output, 0644); err != nil {
 				results <- fmt.Sprintf("Worker %d: erro ao salvar saída para %s: %v", id, outputPath, err)
 			}
 		}
+
 	}
 
 	// Iniciar workers
