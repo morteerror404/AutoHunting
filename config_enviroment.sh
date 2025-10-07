@@ -109,7 +109,26 @@ while true; do
             ;;
         2)
             echo -e "\n[*] Mostrando configuração atual...\n"
-            # lógica para exibir configuração atual
+            if ! command -v jq &> /dev/null; then
+                echo -e "${RED}Erro: A ferramenta 'jq' é necessária, mas não foi encontrada. Por favor, instale-a.${NC}"
+                continue
+            fi
+
+            if [ ! -f "$ENV_JSON_PATH" ]; then
+                echo -e "${RED}Erro: Arquivo de configuração '$ENV_JSON_PATH' não encontrado.${NC}"
+                continue
+            fi
+
+            echo -e "${BOLD}Caminhos de Diretórios:${NC}"
+            jq -r '.path | to_entries[] | "\(.key):\(.value)"' "$ENV_JSON_PATH" | while IFS=: read -r key value; do
+                printf "  ${GREEN}%-30s${NC} %s\n" "$key" "$value"
+            done
+
+            echo -e "\n${BOLD}Arquivos de Configuração:${NC}"
+            jq -r '.archives | to_entries[] | "\(.key):\(.value)"' "$ENV_JSON_PATH" | while IFS=: read -r key value; do
+                printf "  ${CYAN}%-30s${NC} %s\n" "$key" "$value"
+            done
+            echo
             ;;
         3)
             echo -e "\n[*] Configurando serviço de inicialização automática...\n"
