@@ -14,6 +14,7 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
+WORDLIST_JSON_PATH="config/json/wordlist.json" # Caminho fixo para o novo arquivo de wordlists
 ENV_JSON_PATH="config/json/env.json" # Caminho para o arquivo env.json
 LOG_FILE="/var/log/autohunting_install.log"
 DELAY_MS=300
@@ -379,126 +380,6 @@ verificar_e_criar_diretorios_base() {
     done
 }
 
-check_and_set_wordlist_dir() {
-    if ! command -v jq &> /dev/null; then
-        echo -e "${RED}Erro: 'jq' não encontrado. Esta função requer jq.${NC}"
-        return 1
-    fi
-
-    if [ ! -f "$ENV_JSON_PATH" ]; then
-        echo -e "${RED}Erro: Arquivo de configuração '$ENV_JSON_PATH' não encontrado.${NC}"
-        return 1
-    fi
-
-    local current_wordlist_dir
-    current_wordlist_dir=$(jq -r '.path.wordlist_dir' "$ENV_JSON_PATH")
-
-    if [ -n "$current_wordlist_dir" ] && [ -d "$current_wordlist_dir" ]; then
-        echo -e "${GREEN}Diretório de wordlists já configurado em: '$current_wordlist_dir'${NC}"
-        # Se o diretório existe, mas o mapa não, ou o mapa está desatualizado, podemos regenerá-lo.
-        # Por simplicidade, vamos regenerar sempre que o diretório for confirmado.
-        generate_wordlist_map_from_dir "$current_wordlist_dir"
-        return 0
-    fi
-
-    echo -e "\n${YELLOW}O diretório de wordlists não está configurado ou não foi encontrado.${NC}"
-    read -p "Por favor, informe o diretório base para as wordlists (ex: /usr/share/wordlists): " new_wordlist_dir
-
-    if [ -n "$new_wordlist_dir" ]; then
-        update_json_value "$ENV_JSON_PATH" ".path.wordlist_dir" "$new_wordlist_dir"
-        mkdir -p "$new_wordlist_dir" # Garante que o diretório seja criado
-        generate_wordlist_map_from_dir "$new_wordlist_dir" # Gera o mapa após definir o diretório
-    fi
-}
-
-# Helper para obter o caminho do arquivo JSON de wordlists
-get_wordlist_map_file_path() {
-    local map_path
-    map_path=$(jq -r '.path.wordlists_map_file' "$ENV_JSON_PATH" 2>/dev/null)
-    if [ "$map_path" = "null" ] || [ -z "$map_path" ]; then
-        # Fallback: se não estiver em env.json, tenta deduzir
-        local wordlist_dir=$(jq -r '.path.wordlist_dir' "$ENV_JSON_PATH" 2>/dev/null)
-        if [ "$wordlist_dir" != "null" ] && [ -n "$wordlist_dir" ]; then
-            echo "$wordlist_dir/autohunting_wordlists_map.json"
-        else
-            echo "" # Não foi possível determinar
-        fi
-    else
-        echo "$map_path"
-    fi
-}
-
-# Adiciona uma wordlist ao JSON de mapa
-add_wordlist_to_map() {
-    local name="$1"
-    local path="$2"
-    local map_file=$(get_wordlist_map_file_path)
-
-    if [ -z "$map_file" ]; then
-        echo -e "${RED}Erro: Não foi possível determinar o caminho do arquivo de mapa de wordlists.${NC}"
-        return 1
-    fi
-
-    if [ ! -f "$ENV_JSON_PATH" ]; then
-        echo -e "${RED}Erro: Arquivo de configuração '$ENV_JSON_PATH' não encontrado.${NC}"
-        return 1
-    fi
-
-    # Garante que o diretório do mapa exista
-    mkdir -p "$(dirname "$map_file")"
-
-    local current_json="{\"wordlists\":[]}"
-    if [ -f "$map_file" ]; then
-        current_json=$(cat "$map_file")
-    fi
-
-    local new_entry=$(jq -n --arg name "$name" --arg path "$path" '{"name": $name, "path": $path}')
-    local updated_json=$(echo "$current_json" | jq --argjson new_entry "$new_entry" '.wordlists |= (. + [$new_entry]) | unique_by(.name)')
-
-    echo "$updated_json" > "$map_file"
-    echo -e "${GREEN}Wordlist '$name' adicionada/atualizada no mapa: $map_file${NC}"
-}
-
-# Gera o mapa de wordlists a partir de um diretório
-generate_wordlist_map_from_dir() {
-    local wordlist_base_dir="$1"
-    local wordlists_map_file=$(get_wordlist_map_file_path)
-
-    if [ -z "$wordlists_map_file" ]; then
-        echo -e "${RED}Erro: Não foi possível determinar o caminho do arquivo de mapa de wordlists.${NC}"
-        return 1
-    fi
-
-    # Garante que o diretório do mapa exista
-    mkdir -p "$(dirname "$wordlists_map_file")"
-
-    local json_output="{\"wordlists\":[]}"
-
-    echo -e "\n[*] Gerando mapa de wordlists em '$wordlists_map_file' a partir de '$wordlist_base_dir'..."
-
-    # Find .txt files and build JSON array
-    find "$wordlist_base_dir" -type f -name "*.txt" -print0 | while IFS= read -r -d '' file; do
-        local name=$(basename "$file" .txt)
-        local escaped_file=$(echo "$file" | sed 's/"/\\"/g') # Escape double quotes in path
-        local escaped_name=$(echo "$name" | sed 's/"/\\"/g') # Escape double quotes in name
-        json_output=$(echo "$json_output" | jq --arg name "$escaped_name" --arg path "$escaped_file" '.wordlists += [{"name": $name, "path": $path}]')
-    done
-
-    # Remove duplicates by name
-    json_output=$(echo "$json_output" | jq '.wordlists |= unique_by(.name)')
-
-    echo "$json_output" > "$wordlists_map_file"
-
-    # Atualiza env.json com o caminho para o arquivo de mapa, se ainda não estiver lá
-    local current_map_path=$(jq -r '.path.wordlists_map_file' "$ENV_JSON_PATH" 2>/dev/null)
-    if [ "$current_map_path" = "null" ] || [ -z "$current_map_path" ] || [ "$current_map_path" != "$wordlists_map_file" ]; then
-        update_json_value "$ENV_JSON_PATH" ".path.wordlists_map_file" "$wordlists_map_file"
-    fi
-
-    echo -e "${GREEN}Mapa de wordlists gerado com sucesso em: $wordlists_map_file${NC}"
-}
-
-
 update_json_value() { # Mantida a função original
     local file_path="$1"
     local key_path="$2"
@@ -514,6 +395,61 @@ update_json_value() { # Mantida a função original
     tmp_file=$(mktemp)
     jq --arg key_path "$key_path" --arg new_value "$new_value" 'setpath($key_path | split("."); $new_value)' "$file_path" > "$tmp_file" && mv "$tmp_file" "$file_path"
     echo -e "${GREEN}Arquivo '$file_path' atualizado: '$key_path' definido como '$new_value'.${NC}"
+}
+
+# --- NOVAS FUNÇÕES DE WORDLIST (Refatoradas) ---
+
+# Garante que o arquivo wordlist.json exista e seja um JSON válido.
+initialize_wordlist_json() {
+    if [ ! -f "$WORDLIST_JSON_PATH" ]; then
+        mkdir -p "$(dirname "$WORDLIST_JSON_PATH")"
+        echo "{}" > "$WORDLIST_JSON_PATH"
+        log "INFO" "Arquivo '$WORDLIST_JSON_PATH' criado."
+    fi
+}
+
+# Adiciona ou atualiza uma entrada no wordlist.json
+add_wordlist_to_json() {
+    local name="$1"
+    local path="$2"
+
+    initialize_wordlist_json
+    
+    local tmp_file
+    tmp_file=$(mktemp)
+    # Usa jq para adicionar/atualizar a chave de forma segura
+    jq --arg key "$name" --arg value "$path" '.[$key] = $value' "$WORDLIST_JSON_PATH" > "$tmp_file" && mv "$tmp_file" "$WORDLIST_JSON_PATH"
+    
+    echo -e "${GREEN}Wordlist '$name' mapeada para '$path' em '$WORDLIST_JSON_PATH'.${NC}"
+}
+
+# Gera o mapa de wordlists a partir de um diretório e salva em wordlist.json
+generate_wordlist_map_from_dir() {
+    local wordlist_base_dir="$1"
+
+    if [ ! -d "$wordlist_base_dir" ]; then
+        echo -e "${RED}Erro: O diretório base '$wordlist_base_dir' não existe.${NC}"
+        read -p "Deseja criá-lo agora? (s/N): " create_dir
+        if [[ "$create_dir" =~ ^[sS]$ ]]; then
+            mkdir -p "$wordlist_base_dir"
+            echo -e "${GREEN}Diretório '$wordlist_base_dir' criado.${NC}"
+        else
+            return 1
+        fi
+    fi
+
+    initialize_wordlist_json
+    echo -e "\n[*] Gerando mapa de wordlists em '$WORDLIST_JSON_PATH' a partir de '$wordlist_base_dir'..."
+
+    # Usa find para encontrar os arquivos e um loop para adicionar ao JSON
+    find "$wordlist_base_dir" -type f \( -name "*.txt" -o -name "*.lst" \) -print0 | while IFS= read -r -d '' file; do
+        # Usa o nome do arquivo (sem extensão) como chave
+        local name
+        name=$(basename "$file" | sed 's/\.[^.]*$//')
+        add_wordlist_to_json "$name" "$file"
+    done
+
+    echo -e "${GREEN}Mapa de wordlists gerado/atualizado com sucesso em: $WORDLIST_JSON_PATH${NC}"
 }
 
 configurar_servico_db() {
@@ -770,8 +706,6 @@ excluir_rotina() {
 # LOOP PRINCIPAL DE NAVEGAÇÃO
 # ===============================
 
-check_and_set_wordlist_dir # Adiciona a verificação inicial aqui
-
 while true; do
     show_menu_principal
     read -p "Escolha uma opção: " opcao
@@ -922,48 +856,39 @@ while true; do
                                         show_menu_Wordlist
                                         read -p "Escolha uma opção para Wordlists: " wordlist_opcao
                                         case $wordlist_opcao in
-                                            1)
-                                                read -p "Deseja o modo silencioso (salva o caminho com o nome do arquivo) ou assistido (pergunta um nome para cada)? (s/A): " modo_wordlist
+                                            1) # MODO MANUAL
                                                 echo -e "[*] Digite 'sair' para terminar."
-
                                                 while true; do
                                                     read -p "Informe o caminho para o arquivo .txt da wordlist: " wordlist_path
                                                     if [[ "$wordlist_path" == "sair" ]]; then
                                                         break
                                                     fi
-
-                                                    if [[ ! "$wordlist_path" == *.txt ]]; then
-                                                        echo -e "${RED}Erro: O caminho deve terminar com .txt${NC}"
-                                                        continue
-                                                    fi
-
                                                     if [ ! -f "$wordlist_path" ]; then
                                                         echo -e "${RED}Erro: Arquivo não encontrado em '$wordlist_path'${NC}"
                                                         continue
                                                     fi
 
+                                                    # Nome padrão é o nome do arquivo sem extensão
                                                     local wordlist_name
-                                                    wordlist_name=$(basename "$wordlist_path" .txt)
+                                                    wordlist_name=$(basename "$wordlist_path" | sed 's/\.[^.]*$//')
 
-                                                    if [[ ! "$modo_wordlist" =~ ^[sS]$ ]]; then
-                                                        # Modo Assistido
-                                                        read -p "Digite um nome para esta wordlist (padrão: '$wordlist_name'): " custom_name
-                                                        if [ -n "$custom_name" ]; then
-                                                            wordlist_name="$custom_name"
-                                                        fi
-                                                        add_wordlist_to_map "$wordlist_name" "$wordlist_path"
-                                                        echo -e "${GREEN}Wordlist '$wordlist_name' adicionada ao mapa.${NC}"
-                                                    else
-                                                        # Modo Silencioso
-                                                        add_wordlist_to_map "$wordlist_name" "$wordlist_path"
-                                                        echo -e "${GREEN}Wordlist '$wordlist_name' adicionada ao mapa (modo silencioso).${NC}"
+                                                    read -p "Digite um nome lógico para esta wordlist (padrão: '$wordlist_name'): " custom_name
+                                                    if [ -n "$custom_name" ]; then
+                                                        wordlist_name="$custom_name"
                                                     fi
+                                                    add_wordlist_to_json "$wordlist_name" "$wordlist_path"
                                                 done
                                                 echo -e "\n${GREEN}Configuração manual de wordlists concluída.${NC}"
                                                 break
                                                 ;;
-                                            2)
-                                                echo -e "\n[*] Iniciando busca automática por arquivos .txt no diretório base: '$current_wordlist_dir'..."
+                                            2) # MODO AUTOMÁTICO
+                                                local current_wordlist_dir
+                                                current_wordlist_dir=$(jq -r '.path.wordlist_dir' "$ENV_JSON_PATH" 2>/dev/null)
+
+                                                if [ "$current_wordlist_dir" = "null" ] || [ -z "$current_wordlist_dir" ]; then
+                                                    read -p "Por favor, informe o diretório base para as wordlists (ex: /usr/share/seclists): " current_wordlist_dir
+                                                    update_json_value "$ENV_JSON_PATH" ".path.wordlist_dir" "$current_wordlist_dir"
+                                                fi
                                                 generate_wordlist_map_from_dir "$current_wordlist_dir"
                                                 break # Sai do loop de wordlist
                                                 ;;

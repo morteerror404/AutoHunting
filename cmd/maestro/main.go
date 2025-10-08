@@ -17,50 +17,18 @@ import (
 	"github.com/morteerror404/AutoHunting/utils"
 )
 
-// MaestroContext contém todas as configurações e estado para uma execução do maestro.
+// MaestroContext contains all the configurations and state for a maestro execution.
 type MaestroContext struct {
 	Start    time.Time
 	Logs     []ExecutionLog
-	Config   *Config
+	Config   *utils.EnvConfig
 	Commands *Commands
 	Tokens   *Tokens
 	Order    *MaestroOrder
 	LogFile  *os.File
 }
 
-type Config struct {
-	Path struct {
-		APIDirtResultsPath string `json:"api_dirt_results_path"`
-		ToolDirtDir        string `json:"tool_dirt_dir"`
-		ToolCleanedDir     string `json:"tool_cleaned_dir"`
-	} `json:"path"`
-	Archives struct {
-		MaestroExecOrder string `json:"maestro_exec_order"`
-		LogDir           string `json:"log_dir"`
-	} `json:"archives"`
-}
-
-type Commands struct {
-	Nmap map[string]string `json:"nmap"`
-	Ffuf map[string]string `json:"ffuf"`
-}
-
-type Tokens struct {
-	HackerOne struct {
-		Username string `json:"username"`
-		ApiKey   string `json:"api_key"`
-	} `json:"hackerone"`
-	Bugcrowd struct {
-		Token string `json:"token"`
-	} `json:"bugcrowd"`
-	Intigriti struct {
-		Token string `json:"token"`
-	} `json:"intigriti"`
-	YesWeHack struct {
-		Token string `json:"token"`
-	} `json:"yeswehack"`
-}
-
+// ExecutionLog represents a log entry for a step in the execution.
 type ExecutionLog struct {
 	Timestamp time.Time `json:"timestamp"`
 	Step      string    `json:"step"`
@@ -68,21 +36,22 @@ type ExecutionLog struct {
 	Error     string    `json:"error,omitempty"`
 }
 
+// MaestroOrder represents the structure of the execution order.
 type MaestroOrder struct {
 	Platform string              `json:"platform"`
 	Task     string              `json:"task"`
 	Steps    []utils.MaestroTask `json:"steps"`
-	Data     map[string]string   `json:"data,omitempty"` // Campo genérico para dados extras
+	Data     map[string]string   `json:"data,omitempty"` // Generic field for extra data
 }
 
 func main() {
-	log.Println("Iniciando fluxo de execução padrão do maestro a partir da ordem...")
+	log.Println("Starting maestro default execution flow from order...")
 
 	if err := runMaestro(); err != nil {
-		// O erro já foi logado dentro de runMaestro, apenas saímos com status de erro.
+		// The error has already been logged inside runMaestro, just exit with error status.
 		os.Exit(1)
 	}
-	log.Println("Maestro concluiu a execução com sucesso.")
+	log.Println("Maestro finished execution successfully.")
 }
 
 func runMaestro() error {
@@ -91,23 +60,23 @@ func runMaestro() error {
 		Logs:  []ExecutionLog{},
 	}
 
-	// 1. Configurar Log
+	// 1. Setup Logging
 	if err := setupLogging(ctx); err != nil {
-		fmt.Printf("Erro crítico ao configurar o log: %v\n", err)
-		return err // Erro fatal, não podemos continuar sem log.
+		fmt.Printf("Critical error setting up logging: %v\n", err)
+		return err // Fatal error, we cannot continue without logging.
 	}
 	defer ctx.LogFile.Close()
-	defer saveExecutionLog(ctx) // Garante que os logs sejam salvos no final.
+	defer saveExecutionLog(ctx) // Ensures logs are saved at the end.
 
-	// 2. Carregar todas as configurações
+	// 2. Load all configurations
 	if err := loadAllConfigs(ctx); err != nil {
 		logAndExit(ctx, "LoadAllConfigs", err)
 		return err
 	}
 
-	// 3. Iterar e executar cada passo da ordem
+	// 3. Iterate and execute each step of the order
 	for _, step := range ctx.Order.Steps {
-		log.Printf("Iniciando passo: %s", step.Description)
+		log.Printf("Starting step: %s", step.Description)
 		var stepErr error
 
 		switch step.Step {
@@ -124,50 +93,59 @@ func runMaestro() error {
 		case "listScopes":
 			stepErr = stepListScopes(ctx)
 		default:
-			stepErr = fmt.Errorf("passo desconhecido na ordem de execução: %s", step.Step)
+			stepErr = fmt.Errorf("unknown step in execution order: %s", step.Step)
 		}
 
 		if stepErr != nil {
 			logAndExit(ctx, step.Step, stepErr)
-			return stepErr // Interrompe a execução em caso de erro
+			return stepErr // Stops execution on error
 		}
 		ctx.Logs = append(ctx.Logs, ExecutionLog{Timestamp: time.Now(), Step: step.Step, Status: "Success"})
-		log.Printf("Passo '%s' concluído com sucesso.", step.Step)
+		log.Printf("Step '%s' completed successfully.", step.Step)
 	}
 
 	ctx.Logs = append(ctx.Logs, ExecutionLog{Timestamp: time.Now(), Step: "ExecutionCompleted", Status: "Success"})
-	log.Printf("Processamento concluído em %v!\n", time.Since(ctx.Start))
+	log.Printf("Processing finished in %v!\n", time.Since(ctx.Start))
 	return nil
 }
 
 func stepRequestAPI(ctx *MaestroContext) error {
-	return api.RunRequestAPI(ctx.Config.Path.APIDirtResultsPath, ctx.Order.Platform, api.Tokens(*ctx.Tokens))
+	apiDirtPath, ok := ctx.Config.Path["api_dirt_results_path"]
+	if !ok {
+		return fmt.Errorf("api_dirt_results_path not found in env.json")
+	}
+	return api.RunRequestAPI(apiDirtPath, ctx.Order.Platform, api.Tokens(*ctx.Tokens))
 }
 
 func stepRunScanners(ctx *MaestroContext) error {
-	// TODO: Executar scanners em paralelo.
-	// Atualmente, as ferramentas (nmap, ffuf) rodam uma após a outra.
-	// Podemos usar goroutines e um sync.WaitGroup para disparar múltiplos runners simultaneamente, um para cada ferramenta.
-	outDir := ctx.Config.Path.ToolDirtDir
+	outDir, ok := ctx.Config.Path["tool_dirt_dir"]
+	if !ok {
+		return fmt.Errorf("tool_dirt_dir not found in env.json")
+	}
+	apiDirtPath, ok := ctx.Config.Path["api_dirt_results_path"]
+	if !ok {
+		return fmt.Errorf("api_dirt_results_path not found in env.json")
+	}
+
 	for tool, args := range map[string]string{
 		"nmap": ctx.Commands.Nmap["nmap_slow"],
 		"ffuf": ctx.Commands.Ffuf["default"],
 	} {
-		if err := runner.Run(ctx.Config.Path.APIDirtResultsPath, args, outDir, tool); err != nil {
-			return fmt.Errorf("erro no runner para %s: %w", tool, err)
+		if err := runner.Run(apiDirtPath, args, outDir, tool); err != nil {
+			return fmt.Errorf("runner error for %s: %w", tool, err)
 		}
 	}
 	return nil
 }
 
 func stepCleanResults(ctx *MaestroContext) error {
-	// TODO: Paralelizar a limpeza dos arquivos.
-	// A iteração sobre os arquivos de resultado é sequencial.
-	// Podemos criar um pool de workers para processar múltiplos arquivos em paralelo, acelerando esta etapa.
-	outDir := ctx.Config.Path.ToolDirtDir
+	outDir, ok := ctx.Config.Path["tool_dirt_dir"]
+	if !ok {
+		return fmt.Errorf("tool_dirt_dir not found in env.json")
+	}
 	files, err := os.ReadDir(outDir)
 	if err != nil {
-		return fmt.Errorf("falha ao ler diretório de resultados brutos '%s': %w", outDir, err)
+		return fmt.Errorf("failed to read raw results directory '%s': %w", outDir, err)
 	}
 
 	for _, f := range files {
@@ -180,8 +158,7 @@ func stepCleanResults(ctx *MaestroContext) error {
 			template = "endpoints"
 		}
 		if err := cleaner.CleanFile(filename, template); err != nil {
-			// Não paramos o processo inteiro se um arquivo falhar, apenas logamos.
-			log.Printf("AVISO: Falha ao limpar o arquivo %s: %v", filename, err)
+			log.Printf("WARNING: Failed to clean file %s: %v", filename, err)
 			continue
 		}
 	}
@@ -189,65 +166,61 @@ func stepCleanResults(ctx *MaestroContext) error {
 }
 
 func stepStoreResults(ctx *MaestroContext) error {
-	// TODO: Paralelizar a inserção no banco de dados.
-	// Assim como na limpeza, o processamento dos arquivos para inserção no DB é sequencial.
-	// Um pool de workers pode ser usado aqui para ler os arquivos e preparar as transações em paralelo.
 	dbConn, err := db.ConnectDB()
 	if err != nil {
-		return fmt.Errorf("erro ao conectar ao DB: %w", err)
+		return fmt.Errorf("error connecting to DB: %w", err)
 	}
 	defer dbConn.Close()
 
-	cleanDir := ctx.Config.Path.ToolCleanedDir // Usar o caminho correto do env.json
+	cleanDir, ok := ctx.Config.Path["tool_cleaned_dir"]
+	if !ok {
+		return fmt.Errorf("tool_cleaned_dir not found in env.json")
+	}
 	files, err := os.ReadDir(cleanDir)
 	if err != nil {
-		return fmt.Errorf("falha ao ler diretório de resultados limpos '%s': %w", cleanDir, err)
+		return fmt.Errorf("failed to read cleaned results directory '%s': %w", cleanDir, err)
 	}
 
 	for _, f := range files {
-		// Apenas processar arquivos que contêm "_clean_" no nome, ignorando diretórios.
 		if f.IsDir() || !strings.Contains(f.Name(), "_clean_") {
 			continue
 		}
 		filename := filepath.Join(cleanDir, f.Name())
 		if err := db.ProcessCleanFile(filename, dbConn); err != nil {
-			// Não paramos o processo inteiro se um arquivo falhar, apenas logamos.
-			log.Printf("AVISO: Falha ao processar o arquivo limpo %s para o DB: %v", filename, err)
+			log.Printf("WARNING: Failed to process cleaned file %s for DB: %v", filename, err)
 			continue
 		}
 	}
 	return nil
 }
 
-// stepInsertScope conecta ao DB e insere um único escopo lido da ordem de execução.
 func stepInsertScope(ctx *MaestroContext) error {
 	platform := ctx.Order.Platform
 	scope, ok := ctx.Order.Data["scope"]
 	if !ok || scope == "" {
-		return fmt.Errorf("dado 'scope' não encontrado ou vazio na ordem de execução para a tarefa 'insertScope'")
+		return fmt.Errorf("data 'scope' not found or empty in execution order for task 'insertScope'")
 	}
 
 	dbConn, err := db.ConnectDB()
 	if err != nil {
-		return fmt.Errorf("erro ao conectar ao banco de dados: %w", err)
+		return fmt.Errorf("error connecting to database: %w", err)
 	}
 	defer dbConn.Close()
 
 	query := "INSERT INTO scopes (platform, scope) VALUES ($1, $2)"
 	if _, err := dbConn.Exec(query, platform, scope); err != nil {
-		return fmt.Errorf("erro ao executar a inserção no banco de dados: %w", err)
+		return fmt.Errorf("error executing database insertion: %w", err)
 	}
 
-	log.Printf("Sucesso! Escopo '%s' inserido para a plataforma '%s'.\n", scope, platform)
+	log.Printf("Success! Scope '%s' inserted for platform '%s'.\n", scope, platform)
 	return nil
 }
 
-// stepListScopes conecta ao DB e lista os escopos de uma plataforma lida da ordem.
 func stepListScopes(ctx *MaestroContext) error {
 	platform := ctx.Order.Platform
 	dbConn, err := db.ConnectDB()
 	if err != nil {
-		return fmt.Errorf("erro ao conectar ao banco de dados: %w", err)
+		return fmt.Errorf("error connecting to database: %w", err)
 	}
 	defer dbConn.Close()
 
@@ -255,73 +228,64 @@ func stepListScopes(ctx *MaestroContext) error {
 }
 
 func setupLogging(ctx *MaestroContext) error {
-	// Carrega apenas o env para saber onde salvar o log.
-	var envConfig Config
-	if err := utils.LoadJSON("env.json", &envConfig); err != nil {
-		return fmt.Errorf("falha ao carregar env.json para configurar log: %w", err)
+	env, err := utils.LoadEnvConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load env.json to configure logging: %w", err)
+	}
+	ctx.Config = env
+
+	logDir, ok := env.Path["log_dir"]
+	if !ok {
+		return fmt.Errorf("log_dir not found in env.json")
 	}
 
-	logDir := envConfig.Archives.LogDir
 	if err := os.MkdirAll(logDir, 0755); err != nil {
-		return fmt.Errorf("falha ao criar diretório de log '%s': %w", logDir, err)
+		return fmt.Errorf("failed to create log directory '%s': %w", logDir, err)
 	}
 
 	logPath := filepath.Join(logDir, "maestro_execution.log")
 	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
-		return fmt.Errorf("falha ao abrir arquivo de log '%s': %w", logPath, err)
+		return fmt.Errorf("failed to open log file '%s': %w", logPath, err)
 	}
 	ctx.LogFile = f
 
-	// Redireciona a saída padrão do log para o arquivo e para o console
 	mw := io.MultiWriter(os.Stdout, f)
 	log.SetOutput(mw)
 	log.SetFlags(log.Ldate | log.Ltime)
 
-	log.Println("Logging configurado com sucesso.")
+	log.Println("Logging configured successfully.")
 	return nil
 }
 
 func loadAllConfigs(ctx *MaestroContext) error {
-	var config Config
-	if err := utils.LoadJSON("env.json", &config); err != nil {
-		return fmt.Errorf("erro ao carregar env.json: %w", err)
-	}
-	ctx.Config = &config
-	ctx.Logs = append(ctx.Logs, ExecutionLog{Timestamp: time.Now(), Step: "LoadConfig", Status: "Success"})
-
 	var commands Commands
 	if err := utils.LoadJSON("commands.json", &commands); err != nil {
-		return fmt.Errorf("erro ao carregar commands.json: %w", err)
+		return fmt.Errorf("error loading commands.json: %w", err)
 	}
 	ctx.Commands = &commands
 	ctx.Logs = append(ctx.Logs, ExecutionLog{Timestamp: time.Now(), Step: "LoadCommands", Status: "Success"})
 
 	var tokens Tokens
 	if err := utils.LoadJSON("tokens.json", &tokens); err != nil {
-		return fmt.Errorf("erro ao carregar tokens.json: %w", err)
+		return fmt.Errorf("error loading tokens.json: %w", err)
 	}
 	ctx.Tokens = &tokens
 	ctx.Logs = append(ctx.Logs, ExecutionLog{Timestamp: time.Now(), Step: "LoadTokens", Status: "Success"})
 
 	var order MaestroOrder
-	orderData, err := os.ReadFile(config.Archives.MaestroExecOrder)
-	if err != nil {
-		return fmt.Errorf("erro ao ler arquivo de ordem do maestro '%s': %w", config.Archives.MaestroExecOrder, err)
-	}
-	if err := json.Unmarshal(orderData, &order); err != nil {
-		return fmt.Errorf("erro ao decodificar a ordem do maestro: %w", err)
+	if err := utils.LoadJSON("order.json", &order); err != nil {
+		return fmt.Errorf("error loading maestro order: %w", err)
 	}
 	ctx.Order = &order
 	ctx.Logs = append(ctx.Logs, ExecutionLog{Timestamp: time.Now(), Step: "LoadExecutionOrder", Status: "Success"})
 
-	log.Println("Todas as configurações foram carregadas.")
+	log.Println("All configurations loaded.")
 	return nil
 }
 
-// logAndExit registra um erro e prepara para sair.
 func logAndExit(ctx *MaestroContext, step string, err error) {
-	log.Printf("ERRO no passo '%s': %v", step, err)
+	log.Printf("ERROR in step '%s': %v", step, err)
 	ctx.Logs = append(ctx.Logs, ExecutionLog{
 		Timestamp: time.Now(),
 		Step:      step,
@@ -330,21 +294,25 @@ func logAndExit(ctx *MaestroContext, step string, err error) {
 	})
 }
 
-// saveExecutionLog salva o log de execução em um arquivo JSON.
 func saveExecutionLog(ctx *MaestroContext) {
-	if ctx.Config == nil || ctx.Config.Archives.LogDir == "" {
-		fmt.Println("Não foi possível salvar o log JSON: caminho do diretório de log não configurado.")
+	if ctx.Config == nil {
+		fmt.Println("Could not save JSON log: config not loaded.")
+		return
+	}
+	logDir, ok := ctx.Config.Path["log_dir"]
+	if !ok {
+		fmt.Println("Could not save JSON log: log_dir not configured.")
 		return
 	}
 
-	logPath := filepath.Join(ctx.Config.Archives.LogDir, "maestro_summary.json")
+	logPath := filepath.Join(logDir, "maestro_summary.json")
 	logData, err := json.MarshalIndent(ctx.Logs, "", "  ")
 	if err != nil {
-		log.Printf("Erro ao serializar o log de resumo: %v", err)
+		log.Printf("Error marshalling summary log: %v", err)
 		return
 	}
 
 	if err := os.WriteFile(logPath, logData, 0644); err != nil {
-		log.Printf("Erro ao salvar o log de resumo em '%s': %v", logPath, err)
+		log.Printf("Error saving summary log to '%s': %v", logPath, err)
 	}
 }

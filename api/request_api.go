@@ -14,15 +14,15 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/net/html" // Adicionado ao go.mod
+	"golang.org/x/net/html" // Added to go.mod
 )
 
 // -----------------------------
-// Estruturas de Dados
+// Data Structures
 // -----------------------------
 
-// SiteResult define a estrutura de dados para o resultado da verificação de um único site.
-// Esta estrutura é usada para serializar os resultados em formato JSON.
+// SiteResult defines the data structure for the result of checking a single site.
+// This structure is used to serialize the results in JSON format.
 type SiteResult struct {
 	Input       string `json:"input"`
 	ResolvedURL string `json:"resolved_url"`
@@ -34,8 +34,8 @@ type SiteResult struct {
 	ElapsedMS   int64  `json:"elapsed_ms"`
 }
 
-// Tokens espelha a estrutura do arquivo `tokens.json`, armazenando as credenciais
-// de API necessárias para autenticar nas plataformas de Bug Bounty.
+// Tokens mirrors the structure of the `tokens.json` file, storing the credentials
+// API required to authenticate on Bug Bounty platforms.
 type Tokens struct {
 	HackerOne struct {
 		Username string `json:"username"`
@@ -56,8 +56,8 @@ type Tokens struct {
 // Helpers
 // -----------------------------
 
-// ensureScheme garante que uma URL string tenha um esquema (http:// ou https://).
-// Se nenhum esquema estiver presente, adiciona "https://" como padrão.
+// ensureScheme ensures that a URL string has a scheme (http:// or https://).
+// If no scheme is present, it adds "https://" as default.
 func ensureScheme(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -69,8 +69,8 @@ func ensureScheme(raw string) string {
 	return "https://" + raw
 }
 
-// parseTitle extrai o conteúdo da tag <title> de um corpo de resposta HTML.
-// Ele lê de um io.Reader e para assim que encontra o título ou o fim do arquivo.
+// parseTitle extracts the content of the <title> tag from an HTML response body.
+// It reads from an io.Reader and stops as soon as it finds the title or the end of the file.
 func parseTitle(r io.Reader) (string, error) {
 	z := html.NewTokenizer(r)
 	for {
@@ -94,7 +94,7 @@ func parseTitle(r io.Reader) (string, error) {
 	}
 }
 
-// truncate limita uma string a um número `n` de caracteres, adicionando "..." se for cortada.
+// truncate limits a string to a number `n` of characters, adding "..." if it is cut.
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
@@ -103,13 +103,13 @@ func truncate(s string, n int) string {
 }
 
 // -----------------------------
-// Workers HTTP
+// HTTP Workers
 // -----------------------------
 
-// worker é a função executada por cada goroutine concorrente para processar jobs.
-// Ele recebe URLs de um canal `jobs`, realiza a requisição HTTP, processa a resposta,
-// e envia o resultado (SiteResult) para o canal `results`.
-// Respeita um `delay` entre as requisições para evitar rate limiting.
+// worker is the function executed by each concurrent goroutine to process jobs.
+// It receives URLs from a `jobs` channel, performs the HTTP request, processes the response,
+// and sends the result (SiteResult) to the `results` channel.
+// Respects a `delay` between requests to avoid rate limiting.
 func worker(id int, jobs <-chan string, results chan<- SiteResult, client *http.Client, path string, delay time.Duration, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for raw := range jobs {
@@ -174,12 +174,12 @@ func worker(id int, jobs <-chan string, results chan<- SiteResult, client *http.
 }
 
 // -----------------------------
-// HackerOne: programas ativos + structured scopes
+// HackerOne: active programs + structured scopes
 // -----------------------------
 
-// fetchHackerOneProgramHandles busca na API do HackerOne a lista de "handles" (identificadores únicos)
-// de todos os programas públicos. Ele se autentica usando as credenciais fornecidas e filtra
-// os programas que estão em "public_mode".
+// fetchHackerOneProgramHandles searches the HackerOne API for the list of "handles" (unique identifiers)
+// of all public programs. It authenticates using the credentials provided and filters
+// the programs that are in "public_mode".
 func fetchHackerOneProgramHandles(username, apiKey string) ([]string, error) {
 	client := &http.Client{Timeout: 20 * time.Second}
 	req, _ := http.NewRequest("GET", "https://api.hackerone.com/v1/hackers/programs", nil)
@@ -217,12 +217,12 @@ func fetchHackerOneProgramHandles(username, apiKey string) ([]string, error) {
 	return handles, nil
 }
 
-// fetchHackerOneStructuredScopes, para um determinado `handle` de programa, consulta o endpoint
-// de escopos estruturados da API do HackerOne.
-// A função filtra os ativos para retornar apenas aqueles que são:
-// 1. Elegíveis para submissão (`eligible_for_submission`).
-// 2. Elegíveis para recompensa (`eligible_for_bounty`).
-// 3. De tipos relevantes para automação (`URL`, `DOMAIN`, `CIDR`).
+// fetchHackerOneStructuredScopes, for a given program `handle`, queries the endpoint
+// of structured scopes of the HackerOne API.
+// The function filters the assets to return only those that are:
+// 1. Eligible for submission (`eligible_for_submission`).
+// 2. Eligible for reward (`eligible_for_bounty`).
+// 3. Of types relevant to automation (`URL`, `DOMAIN`, `CIDR`).
 func fetchHackerOneStructuredScopes(handle, username, apiKey string) ([]string, error) {
 	endpoint := fmt.Sprintf("https://api.hackerone.com/v1/hackers/programs/%s/structured_scopes", url.PathEscape(handle))
 	client := &http.Client{Timeout: 20 * time.Second}
@@ -261,11 +261,11 @@ func fetchHackerOneStructuredScopes(handle, username, apiKey string) ([]string, 
 			continue
 		}
 		if attr.AssetType == "" {
-			// aceitar mesmo se não tiver asset_type, mas normalmente vem
+			// accept even if it doesn't have asset_type, but it usually comes
 			out = append(out, attr.Identifier)
 			continue
 		}
-		// filtrar por tipos úteis (Domain, Url, Cidr)
+		// filter by useful types (Domain, Url, Cidr)
 		assetTypeLower := strings.ToLower(attr.AssetType)
 		if strings.Contains(assetTypeLower, "domain") || strings.Contains(assetTypeLower, "url") || strings.Contains(assetTypeLower, "cidr") {
 			out = append(out, attr.Identifier)
@@ -274,8 +274,8 @@ func fetchHackerOneStructuredScopes(handle, username, apiKey string) ([]string, 
 	return out, nil
 }
 
-// writeLinesToFile é uma função auxiliar que escreve um slice de strings em um arquivo,
-// com cada string em uma nova linha. Ele cria o arquivo se não existir e sobrescreve o conteúdo.
+// writeLinesToFile is a helper function that writes a slice of strings to a file,
+// with each string on a new line. It creates the file if it does not exist and overwrites the content.
 func writeLinesToFile(path string, lines []string) error {
 	f, err := os.Create(path)
 	if err != nil {
@@ -294,29 +294,29 @@ func writeLinesToFile(path string, lines []string) error {
 	return w.Flush()
 }
 
-// writeLinesRotate escreve linhas em um arquivo, mas antes renomeia qualquer arquivo
-// existente com o mesmo nome para `<basename>-old.txt`. Isso serve como um mecanismo
-// simples de backup da execução anterior.
+// writeLinesRotate writes lines to a file, but first renames any
+// existing file with the same name to `<basename>-old.txt`. This serves as a
+// simple backup mechanism from the previous execution.
 func writeLinesRotate(path string, lines []string) error {
 	if _, err := os.Stat(path); err == nil {
 		ext := filepath.Ext(path)
 		oldPath := strings.TrimSuffix(path, ext) + "-old" + ext
 		if _, err := os.Stat(oldPath); err == nil {
 			if err := os.Remove(oldPath); err != nil {
-				return fmt.Errorf("erro removendo arquivo antigo %s: %w", oldPath, err)
+				return fmt.Errorf("error removing old file %s: %w", oldPath, err)
 			}
 		}
 		if err := os.Rename(path, oldPath); err != nil {
-			return fmt.Errorf("erro renomeando %s para %s: %w", path, oldPath, err)
+			return fmt.Errorf("error renaming %s to %s: %w", path, oldPath, err)
 		}
 	}
 	return writeLinesToFile(path, lines)
 }
 
-// RunRequestAPI é o ponto de entrada para o maestro.
-// Ele orquestra a coleta de escopos para uma plataforma específica (`platform`)
-// usando as credenciais fornecidas (`tokens`) e salva os resultados brutos
-// no caminho especificado (`apiDirtResultsPath`).
+// RunRequestAPI is the entry point for the maestro.
+// It orchestrates the collection of scopes for a specific platform (`platform`)
+// using the credentials provided (`tokens`) and saves the raw results
+// in the specified path (`apiDirtResultsPath`).
 func RunRequestAPI(apiDirtResultsPath string, platform string, tokens Tokens) error {
 	var allScopes []string
 	var err error
@@ -324,28 +324,28 @@ func RunRequestAPI(apiDirtResultsPath string, platform string, tokens Tokens) er
 	switch platform {
 	case "hackerone":
 		if tokens.HackerOne.Username == "" || tokens.HackerOne.ApiKey == "" {
-			return fmt.Errorf("credenciais do HackerOne não fornecidas")
+			return fmt.Errorf("HackerOne credentials not provided")
 		}
-		fmt.Fprintf(os.Stderr, "[hackerone] buscando handles de programas...\n")
+		fmt.Fprintf(os.Stderr, "[hackerone] fetching program handles...\n")
 		handles, errH := fetchHackerOneProgramHandles(tokens.HackerOne.Username, tokens.HackerOne.ApiKey)
 		if errH != nil {
-			return fmt.Errorf("erro ao buscar handles do HackerOne: %w", errH)
+			return fmt.Errorf("error fetching HackerOne handles: %w", errH)
 		}
-		fmt.Fprintf(os.Stderr, "[hackerone] %d handles encontrados. buscando escopos...\n", len(handles))
+		fmt.Fprintf(os.Stderr, "[hackerone] %d handles found. fetching scopes...\n", len(handles))
 
-		// TODO: Paralelizar a busca de escopos. Atualmente, é feita sequencialmente para cada handle.
-		// Usar goroutines e um WaitGroup para buscar escopos de múltiplos handles simultaneamente pode acelerar muito o processo.
-		// É preciso garantir que a adição ao slice 'allScopes' seja segura para concorrência (usando um mutex).
+		// TODO: Parallelize scope fetching. Currently, it is done sequentially for each handle.
+		// Using goroutines and a WaitGroup to fetch scopes from multiple handles simultaneously can greatly speed up the process.
+		// It is necessary to ensure that adding to the 'allScopes' slice is concurrency-safe (using a mutex).
 		for _, h := range handles {
 			scopes, errS := fetchHackerOneStructuredScopes(h, tokens.HackerOne.Username, tokens.HackerOne.ApiKey)
 			if errS != nil {
-				fmt.Fprintf(os.Stderr, "[hackerone] AVISO: falha ao buscar escopos para o handle '%s': %v\n", h, errS)
-				continue // Continua para o próximo handle
+				fmt.Fprintf(os.Stderr, "[hackerone] WARNING: failed to fetch scopes for handle '%s': %v\n", h, errS)
+				continue // Continue to the next handle
 			}
 			allScopes = append(allScopes, scopes...)
 		}
 
-	// TODO: Implementar a coleta de escopos para as outras plataformas.
+	// TODO: Implement scope collection for the other platforms.
 	// case "bugcrowd":
 	// 	// allScopes, err = fetchBugcrowdScopes(tokens.Bugcrowd.Token)
 	// case "intigriti":
@@ -354,28 +354,28 @@ func RunRequestAPI(apiDirtResultsPath string, platform string, tokens Tokens) er
 	// 	// allScopes, err = fetchYesWeHackScopes(tokens.YesWeHack.Token)
 
 	default:
-		return fmt.Errorf("plataforma '%s' não suportada para coleta de API", platform)
+		return fmt.Errorf("platform '%s' not supported for API collection", platform)
 	}
 
 	if err != nil {
-		return fmt.Errorf("erro ao buscar escopos para a plataforma '%s': %w", platform, err)
+		return fmt.Errorf("error fetching scopes for platform '%s': %w", platform, err)
 	}
 
 	if len(allScopes) == 0 {
-		fmt.Fprintf(os.Stderr, "AVISO: Nenhum escopo encontrado para a plataforma '%s'.\n", platform)
-		return nil // Não é um erro fatal, mas nada foi encontrado.
+		fmt.Fprintf(os.Stderr, "WARNING: No scopes found for platform '%s'.\n", platform)
+		return nil // Not a fatal error, but nothing was found.
 	}
 
-	// Garante que o diretório de saída exista
+	// Ensures the output directory exists
 	if err := os.MkdirAll(filepath.Dir(apiDirtResultsPath), 0755); err != nil {
-		return fmt.Errorf("erro ao criar diretório de saída '%s': %w", filepath.Dir(apiDirtResultsPath), err)
+		return fmt.Errorf("error creating output directory '%s': %w", filepath.Dir(apiDirtResultsPath), err)
 	}
 
-	// Salva os escopos no arquivo de resultados brutos especificado pelo maestro
+	// Saves the scopes in the raw results file specified by the maestro
 	if err := writeLinesToFile(apiDirtResultsPath, allScopes); err != nil {
-		return fmt.Errorf("erro ao salvar escopos em '%s': %w", apiDirtResultsPath, err)
+		return fmt.Errorf("error saving scopes to '%s': %w", apiDirtResultsPath, err)
 	}
 
-	fmt.Printf("Sucesso! %d escopos da plataforma '%s' salvos em: %s\n", len(allScopes), platform, apiDirtResultsPath)
+	fmt.Printf("Success! %d scopes from platform '%s' saved to: %s\n", len(allScopes), platform, apiDirtResultsPath)
 	return nil
 }

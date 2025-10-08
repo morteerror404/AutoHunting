@@ -6,14 +6,23 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
-// Estruturas para a ordem de execução
+// EnvConfig holds the configuration from env.json
+type EnvConfig struct {
+	Path              map[string]string   `json:"path"`
+	Archives          map[string]string   `json:"archives"`
+	AccessPermissions map[string][]string `json:"access_permissions"`
+}
+
+// MaestroTask represents a step in a Maestro order
 type MaestroTask struct {
 	Step        string `json:"step"`
 	Description string `json:"description"`
 }
 
+// MaestroOrder represents a Maestro execution order
 type MaestroOrder struct {
 	Platform string            `json:"platform"`
 	Task     string            `json:"task"`
@@ -21,56 +30,135 @@ type MaestroOrder struct {
 	Data     map[string]string `json:"data,omitempty"`
 }
 
-// LoadJSON carrega um arquivo JSON do diretório json/ e decodifica para a estrutura fornecida
-func LoadJSON(filename string, v interface{}) error {
-	absPath := filepath.Join("json", filename)
+var envConfig *EnvConfig
+
+// LoadEnvConfig loads the env.json file and caches it
+func LoadEnvConfig() (*EnvConfig, error) {
+	if envConfig != nil {
+		return envConfig, nil
+	}
+
+	// Assuming env.json is in a known relative path from the executable or working directory
+	// For this example, let's assume it's in 'config/json/env.json'
+	// In a real application, you might want to use an environment variable or a command-line flag
+	// to specify the config path.
+	envPath := "config/json/env.json"
+	data, err := os.ReadFile(envPath)
+	if err != nil {
+		return nil, fmt.Errorf("error reading env.json: %w", err)
+	}
+
+	var config EnvConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("error unmarshalling env.json: %w", err)
+	}
+
+	envConfig = &config
+	return envConfig, nil
+}
+
+// GetEnvPath retrieves a specific path from the "path" section of env.json.
+func GetEnvPath(pathKey string) (string, error) {
+	config, err := LoadEnvConfig()
+	if err != nil {
+		return "", err
+	}
+
+	path, ok := config.Path[pathKey]
+	if !ok {
+		return "", fmt.Errorf("path key '%s' not found in env.json 'path' object", pathKey)
+	}
+
+	return path, nil
+}
+
+// GetAccessPermissions retrieves the access permissions for a given module.
+func GetAccessPermissions(moduleName string) ([]string, error) {
+	config, err := LoadEnvConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	permissions, ok := config.AccessPermissions[moduleName]
+	if !ok {
+		return nil, fmt.Errorf("no access permissions found for module '%s'", moduleName)
+	}
+
+	return permissions, nil
+}
+
+// GetJSONPath constructs the full path for a given JSON file name
+func GetJSONPath(jsonName string) (string, error) {
+	config, err := LoadEnvConfig()
+	if err != nil {
+		return "", err
+	}
+
+	// Normalize jsonName to have consistent key format (e.g., "commands.json")
+	normalizedJSONName := strings.ReplaceAll(jsonName, "-", "_")
+	normalizedJSONName = strings.TrimSuffix(normalizedJSONName, ".json")
+
+	var archiveKey string
+	for key, value := range config.Archives {
+		if strings.Contains(value, jsonName) {
+			archiveKey = key
+			break
+		}
+	}
+
+	if archiveKey == "" {
+		return "", fmt.Errorf("archive path for '%s' not found in env.json", jsonName)
+	}
+
+	relativePath := config.Archives[archiveKey]
+	if relativePath == "" {
+		return "", fmt.Errorf("archive path for '%s' not found in env.json", jsonName)
+	}
+
+	basePath, ok := config.Path["base_path"]
+	if !ok {
+		return "", fmt.Errorf("'base_path' not found in env.json path config")
+	}
+
+	return filepath.Join(basePath, relativePath), nil
+}
+
+// LoadJSON loads a JSON file using the path from env.json
+func LoadJSON(jsonName string, v interface{}) error {
+	absPath, err := GetJSONPath(jsonName)
+	if err != nil {
+		return err
+	}
 
 	data, err := os.ReadFile(absPath)
 	if err != nil {
-		return fmt.Errorf("erro ao ler arquivo %s: %w", absPath, err)
+		return fmt.Errorf("error reading file %s: %w", absPath, err)
 	}
 
 	if err := json.Unmarshal(data, v); err != nil {
-		return fmt.Errorf("erro ao decodificar JSON de %s: %w", absPath, err)
+		return fmt.Errorf("error unmarshalling JSON from %s: %w", absPath, err)
 	}
 
 	return nil
 }
 
-// CreateExecutionOrder gera o arquivo de ordem para o maestro.
+// CreateExecutionOrder generates the execution order file for the maestro.
 func CreateExecutionOrder(task, platform string, data map[string]string) error {
-	// 1. Carregar env.json para obter os caminhos
-	var envConfig struct {
-		Archives struct {
-			MaestroExecOrder      string `json:"maestro_exec_order"`
-			MaestroOrderTemplates string `json:"maestro_order_templates"`
-		} `json:"archives"`
-	}
-	if err := LoadJSON("env.json", &envConfig); err != nil {
-		return fmt.Errorf("erro ao carregar env.json para criar ordem: %w", err)
-	}
-
-	orderTemplatesPath := envConfig.Archives.MaestroOrderTemplates
-	maestroOrderPath := envConfig.Archives.MaestroExecOrder
-
-	// 2. Carregar o arquivo de templates de ordem
+	// 1. Load order templates
 	var orderTemplates struct {
 		ExecutionPlans map[string][]MaestroTask `json:"execution_plans"`
 	}
-	// Usamos LoadJSON com um caminho relativo, pois ele já adiciona o prefixo "json/"
-	// Precisamos extrair o nome do arquivo do caminho absoluto.
-	templateFilename := filepath.Base(orderTemplatesPath)
-	if err := LoadJSON(templateFilename, &orderTemplates); err != nil {
-		return fmt.Errorf("erro ao carregar o template de ordens '%s': %w", orderTemplatesPath, err)
+	if err := LoadJSON("order-templates.json", &orderTemplates); err != nil {
+		return fmt.Errorf("error loading order templates: %w", err)
 	}
 
-	// 3. Encontrar o plano de execução para a tarefa solicitada
+	// 2. Find the execution plan for the requested task
 	steps, ok := orderTemplates.ExecutionPlans[task]
 	if !ok {
-		return fmt.Errorf("plano de execução para a tarefa '%s' não encontrado em '%s'", task, orderTemplatesPath)
+		return fmt.Errorf("execution plan for task '%s' not found", task)
 	}
 
-	// 4. Montar a ordem final
+	// 3. Assemble the final order
 	finalOrder := MaestroOrder{
 		Platform: platform,
 		Task:     task,
@@ -78,21 +166,25 @@ func CreateExecutionOrder(task, platform string, data map[string]string) error {
 		Data:     data,
 	}
 
-	// 5. Serializar e salvar o arquivo de ordem final para o maestro
+	// 4. Serialize and save the final order file
 	orderData, err := json.MarshalIndent(finalOrder, "", "  ")
 	if err != nil {
-		return fmt.Errorf("erro ao serializar a ordem final do maestro: %w", err)
+		return fmt.Errorf("error marshalling final maestro order: %w", err)
 	}
 
-	// Garante que o diretório de destino exista
+	maestroOrderPath, err := GetJSONPath("order.json")
+	if err != nil {
+		return fmt.Errorf("error getting path for maestro order file: %w", err)
+	}
+
 	if err := os.MkdirAll(filepath.Dir(maestroOrderPath), 0755); err != nil {
-		return fmt.Errorf("erro ao criar diretório para a ordem do maestro: %w", err)
+		return fmt.Errorf("error creating directory for maestro order: %w", err)
 	}
 
 	if err := ioutil.WriteFile(maestroOrderPath, orderData, 0644); err != nil {
-		return fmt.Errorf("erro ao escrever o arquivo de ordem do maestro '%s': %w", maestroOrderPath, err)
+		return fmt.Errorf("error writing maestro order file '%s': %w", maestroOrderPath, err)
 	}
 
-	fmt.Printf("Ordem de execução para a tarefa '%s' criada com sucesso em: %s\n", task, maestroOrderPath)
+	fmt.Printf("Execution order for task '%s' created successfully at: %s\n", task, maestroOrderPath)
 	return nil
 }

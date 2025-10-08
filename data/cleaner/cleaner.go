@@ -11,38 +11,34 @@ import (
 	"github.com/morteerror404/AutoHunting/utils"
 )
 
-// Estruturas (As mesmas do exemplo anterior)
+// Template defines the structure for a single cleaning rule.
 type Template struct {
 	Regex  string   `json:"regex"`
 	Fields []string `json:"fields"`
 }
 
-// AllToolTemplates carrega o arquivo cleaner-templates.json, que agora contém todos os templates.
+// AllToolTemplates loads the cleaner-templates.json file, which now contains all templates.
 type AllToolTemplates map[string]map[string]Template
 
-// EnvConfig carrega os caminhos necessários do env.json.
-type EnvConfig struct {
-	Path struct {
-		ToolCleanedDir string `json:"tool_cleaned_dir"`
-	} `json:"path"`
-}
-
-// O resto da sua estrutura de structs e lógica para cleanFile ...
-
+// CleanFile processes a raw tool output file based on a named template.
 func CleanFile(filename string, templateName string) error {
-	// Carrega as configurações de ambiente para obter o diretório de saída.
-	var env EnvConfig
-	if err := utils.LoadJSON("env.json", &env); err != nil {
-		return fmt.Errorf("erro ao carregar env.json: %w", err)
+	// Load environment settings to get the output directory.
+	env, err := utils.LoadEnvConfig()
+	if err != nil {
+		return fmt.Errorf("error loading env.json: %w", err)
+	}
+	cleanedDir, ok := env.Archives["tool_cleaned_dir"]
+	if !ok {
+		return fmt.Errorf("tool_cleaned_dir not found in env.json")
 	}
 
-	// 1. Carrega o arquivo centralizado que contém todos os templates.
+	// 1. Load the centralized file containing all templates.
 	var allTemplates AllToolTemplates
 	if err := utils.LoadJSON("cleaner-templates.json", &allTemplates); err != nil {
-		return fmt.Errorf("erro ao carregar cleaner-templates.json: %w", err)
+		return fmt.Errorf("error loading cleaner-templates.json: %w", err)
 	}
 
-	// 2. IDENTIFICA A FERRAMENTA E SELECIONA O TEMPLATE CORRETO
+	// 2. IDENTIFY THE TOOL AND SELECT THE CORRECT TEMPLATE
 	var toolName string
 	var selectedTemplate Template
 	var found bool
@@ -50,7 +46,7 @@ func CleanFile(filename string, templateName string) error {
 
 	for name, toolTemplates := range allTemplates {
 		if strings.HasPrefix(base, name+"_") {
-			toolName = name
+			oolName = name
 			if t, ok := toolTemplates[templateName]; ok {
 				selectedTemplate = t
 				found = true
@@ -60,55 +56,55 @@ func CleanFile(filename string, templateName string) error {
 	}
 
 	if !found {
-		return fmt.Errorf("template de limpeza '%s' não encontrado para a ferramenta '%s' em 'cleaner-templates.json'", templateName, toolName)
+		return fmt.Errorf("cleaning template '%s' not found for tool '%s' in 'cleaner-templates.json'", templateName, toolName)
 	}
 
-	// 4. LER O ARQUIVO DE RESULTADOS BRUTOS E APLICAR A LIMPEZA
+	// 4. READ THE RAW RESULTS FILE AND APPLY CLEANING
 	inputFile, err := os.Open(filename)
 	if err != nil {
-		return fmt.Errorf("erro ao abrir arquivo de resultados %s: %w", filename, err)
+		return fmt.Errorf("error opening results file %s: %w", filename, err)
 	}
 	defer inputFile.Close()
 
 	re, err := regexp.Compile(selectedTemplate.Regex)
 	if err != nil {
-		return fmt.Errorf("erro ao compilar regex do template '%s': %w", templateName, err)
+		return fmt.Errorf("error compiling regex from template '%s': %w", templateName, err)
 	}
 
 	scanner := bufio.NewScanner(inputFile)
-	var cleanedLines []string // Agora armazena strings formatadas (linhas)
+	var cleanedLines []string // Now stores formatted strings (lines)
 
 	for scanner.Scan() {
 		line := scanner.Text()
 		matches := re.FindStringSubmatch(line)
 
 		if len(matches) > 1 {
-			// Prepara os dados extraídos para serem unidos
+			// Prepare the extracted data to be joined
 			extractedData := make([]string, 0, len(selectedTemplate.Fields))
 			for i := range selectedTemplate.Fields {
-				// i + 1 porque os matches reais começam no índice 1
+				// i + 1 because the actual matches start at index 1
 				if i+1 < len(matches) {
 					extractedData = append(extractedData, matches[i+1])
 				}
 			}
-			// UNE os dados extraídos em uma única linha separada por '|'
+			// JOIN the extracted data into a single line separated by '|'
 			cleanedLines = append(cleanedLines, strings.Join(extractedData, "|"))
 		}
 	}
 
-	// 5. SALVAR OS DADOS LIMPOS NO NOVO ARQUIVO TXT
+	// 5. SAVE THE CLEANED DATA TO THE NEW TXT FILE
 	baseName := strings.TrimSuffix(base, filepath.Ext(base))
 	outputFilename := baseName + "_clean_" + templateName + ".txt"
-	outputFilePath := filepath.Join(env.Path.ToolCleanedDir, outputFilename)
+	outputFilePath := filepath.Join(cleanedDir, outputFilename)
 
-	// Garante que o diretório de saída exista.
-	if err := os.MkdirAll(env.Path.ToolCleanedDir, 0755); err != nil {
-		return fmt.Errorf("erro ao criar diretório de saída '%s': %w", env.Path.ToolCleanedDir, err)
+	// Ensure the output directory exists.
+	if err := os.MkdirAll(cleanedDir, 0755); err != nil {
+		return fmt.Errorf("error creating output directory '%s': %w", cleanedDir, err)
 	}
 
 	outputFile, err := os.Create(outputFilePath)
 	if err != nil {
-		return fmt.Errorf("erro ao criar arquivo de saída: %w", err)
+		return fmt.Errorf("error creating output file: %w", err)
 	}
 	defer outputFile.Close()
 
@@ -116,13 +112,11 @@ func CleanFile(filename string, templateName string) error {
 	for _, line := range cleanedLines {
 		_, err := writer.WriteString(line + "\n")
 		if err != nil {
-			return fmt.Errorf("erro ao escrever linha no arquivo limpo: %w", err)
+			return fmt.Errorf("error writing line to cleaned file: %w", err)
 		}
 	}
 	writer.Flush()
 
-	fmt.Printf("Sucesso! Dados limpos do template '%s' salvos em: %s\n", templateName, outputFilePath)
+	fmt.Printf("Success! Cleaned data from template '%s' saved to: %s\n", templateName, outputFilePath)
 	return nil
 }
-
-// func data_manager() { ... } (A mesma função data_manager de teste)

@@ -8,15 +8,15 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/morteerror404/AutoHunting/utils" // To load env.json
+	"github.com/morteerror404/AutoHunting/utils"
 )
 
 // EnvConfig structure to load relevant paths from env.json
 type EnvConfig struct {
-	Path struct {
-		APIDirtResultsPath string `json:"api_dirt_results_path"`
-		// Add other dirt paths if needed, e.g., ToolDirtDir
-	} `json:"path"`
+	Path map[string]string `json:"path"`
+	// A estrutura completa de env.json não é necessária aqui,
+	// mas o `LoadConfig` precisa de uma struct para decodificar.
+	// Apenas o campo `Path` é relevante para esta função.
 }
 
 // normalizeDirtFiles lê arquivos de um diretório "dirt" especificado.
@@ -91,11 +91,11 @@ func normalizeDirtFiles(dirtPath string) ([]string, error) {
 // Esta função é o coração do módulo 'results', preparando os alvos para os scanners.
 func ProcessAndUnifyScopes(outputFile string) error {
 	// 1. Carrega env.json para obter o caminho do diretório "dirt" da API
-	var envConfig EnvConfig
-	if err := utils.LoadJSON("env.json", &envConfig); err != nil {
-		return fmt.Errorf("erro ao carregar env.json para obter api_dirt_results_path: %w", err)
+	var envCfg EnvConfig
+	if err := utils.LoadConfig("enviroment_json", &envCfg); err != nil {
+		return fmt.Errorf("erro ao carregar configuração de ambiente: %w", err)
 	}
-	apiDirtPath := envConfig.Path.APIDirtResultsPath
+	apiDirtPath := envCfg.Path["api_dirt_results_path"]
 
 	// 2. Normaliza os arquivos no diretório "dirt" da API
 	inputFiles, err := normalizeDirtFiles(apiDirtPath)
@@ -131,7 +131,8 @@ func ProcessAndUnifyScopes(outputFile string) error {
 			line := strings.TrimSpace(scanner.Text())
 			// Ignora linhas vazias ou que são apenas comentários.
 			if line != "" && !strings.HasPrefix(line, "#") {
-				uniqueScopes[line] = struct{}{}
+			
+uniqueScopes[line] = struct{}{}
 			}
 		}
 		file.Close() // Fecha imediatamente após a varredura

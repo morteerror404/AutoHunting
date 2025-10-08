@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hpcloud/tail" //  biblioteca de tail robusta
+	"github.com/hpcloud/tail" //  robust tail library
 	"github.com/morteerror404/AutoHunting/data/db"
 	"github.com/morteerror404/AutoHunting/utils"
 )
@@ -41,12 +41,12 @@ func main() {
 }
 
 func showMainMenu() {
-	fmt.Println("\n===== AutoHunting - Menu Principal =====")
-	fmt.Println("1) Iniciar Caçada (Hunt)")
-	fmt.Println("2) Consultar Banco de Dados")
-	fmt.Println("3) Verificar Status das APIs")
-	fmt.Println("0) Sair")
-	fmt.Print("Escolha uma opção: ")
+	fmt.Println("\n===== AutoHunting - Main Menu =====")
+	fmt.Println("1) Start Hunt")
+	fmt.Println("2) Query Database")
+	fmt.Println("3) Check API Status")
+	fmt.Println("0) Exit")
+	fmt.Print("Choose an option: ")
 
 	reader := bufio.NewReader(os.Stdin)
 	input, _ := reader.ReadString('\n')
@@ -60,46 +60,46 @@ func showMainMenu() {
 	case "3":
 		handleAPIStatusMenu()
 	case "0":
-		fmt.Println("Saindo...")
+		fmt.Println("Exiting...")
 		os.Exit(0)
 	default:
-		fmt.Println("Opção inválida.")
+		fmt.Println("Invalid option.")
 	}
 }
 
-// Carregar tokens
+// Load tokens
 func handleHuntMenu() {
 	tokens, err := loadTokens()
 	if err != nil {
-		fmt.Printf("Erro ao carregar tokens: %v\n", err)
+		fmt.Printf("Error loading tokens: %v\n", err)
 		return
 	}
 
 	platform, err := selectPlatform(tokens)
 	if err != nil {
-		fmt.Printf("Erro: %v\n", err)
+		fmt.Printf("Error: %v\n", err)
 		return
 	}
 	if platform == "" {
-		return // Usuário cancelou
+		return // User cancelled
 	}
 
-	// Cria a ordem e dispara o maestro
-	task := "fullHunt" // Deve corresponder à chave em order-templates.json
+	// Create the order and trigger the maestro
+	task := "fullHunt" // Must match the key in order-templates.json
 	if err := utils.CreateExecutionOrder(task, platform, nil); err != nil {
-		fmt.Printf("Erro ao criar ordem de execução para o maestro: %v\n", err)
+		fmt.Printf("Error creating execution order for maestro: %v\n", err)
 		return
 	}
 	triggerMaestro()
 }
 
 func handleDBMenu() {
-	// Lógica para o menu do banco de dados
-	fmt.Println("\n--- Menu Banco de Dados ---")
-	fmt.Println("1) Listar escopos de uma plataforma")
-	fmt.Println("2) Inserir escopo manualmente")
-	fmt.Println("0) Voltar")
-	fmt.Print("Escolha: ")
+	// Logic for the database menu
+	fmt.Println("\n--- Database Menu ---")
+	fmt.Println("1) List scopes for a platform")
+	fmt.Println("2) Insert scope manually")
+	fmt.Println("0) Back")
+	fmt.Print("Choose: ")
 	reader := bufio.NewReader(os.Stdin)
 	input, _ := reader.ReadString('\n')
 	choice := strings.TrimSpace(input)
@@ -109,57 +109,57 @@ func handleDBMenu() {
 		{
 			tokens, err := loadTokens()
 			if err != nil {
-				fmt.Printf("Erro ao carregar tokens: %v\n", err)
+				fmt.Printf("Error loading tokens: %v\n", err)
 				return
 			}
 			platform, err := selectPlatform(tokens)
 			if err != nil {
-				fmt.Printf("Erro ao selecionar plataforma: %v\n", err)
+				fmt.Printf("Error selecting platform: %v\n", err)
 				return
 			}
 			if platform != "" {
-				// Cria a ordem para a tarefa 'listScopes' e dispara o maestro
+				// Create the order for the 'listScopes' task and trigger the maestro
 				if err := utils.CreateExecutionOrder("listScopes", platform, nil); err != nil {
-					fmt.Printf("Erro ao criar ordem de listagem: %v\n", err)
+					fmt.Printf("Error creating list order: %v\n", err)
 				} else {
-					fmt.Println("\nOrdem de listagem criada. Disparando o maestro...")
+					fmt.Println("\nList order created. Triggering maestro...")
 					triggerMaestro()
 				}
 			}
 		}
 	case "2":
 		if err := handleManualScopeInsertion(); err != nil {
-			fmt.Printf("Erro ao inserir escopo: %v\n", err)
+			fmt.Printf("Error inserting scope: %v\n", err)
 		}
 	case "0":
 		return
 	default:
-		fmt.Println("Opção inválida.")
+		fmt.Println("Invalid option.")
 	}
 }
 
 func handleAPIStatusMenu() {
 	tokens, err := loadTokens()
 	if err != nil {
-		fmt.Printf("Erro ao carregar tokens: %v\n", err)
+		fmt.Printf("Error loading tokens: %v\n", err)
 		return
 	}
 	platform, err := selectPlatform(tokens)
 	if err != nil {
-		fmt.Printf("Erro ao selecionar plataforma: %v\n", err)
+		fmt.Printf("Error selecting platform: %v\n", err)
 		return
 	}
 	if platform != "" {
-		fmt.Println("Verificando status...")
+		fmt.Println("Checking status...")
 		if err = checkAPIStatus(platform); err != nil {
-			fmt.Printf("Erro ao verificar API: %v\n", err)
+			fmt.Printf("Error checking API: %v\n", err)
 		} else {
-			fmt.Printf("API da plataforma '%s' parece estar respondendo corretamente.\n", platform)
+			fmt.Printf("API for platform '%s' seems to be responding correctly.\n", platform)
 		}
 	}
 }
 
-// loadTokens carrega o arquivo tokens.json
+// loadTokens loads the tokens.json file
 func loadTokens() (Tokens, error) {
 	var tokens Tokens
 	if err := utils.LoadJSON("tokens.json", &tokens); err != nil {
@@ -168,7 +168,7 @@ func loadTokens() (Tokens, error) {
 	return tokens, nil
 }
 
-// selectPlatform exibe um menu interativo para selecionar a plataforma
+// selectPlatform displays an interactive menu to select the platform
 func selectPlatform(tokens Tokens) (string, error) {
 	platforms := []string{}
 	if tokens.HackerOne.ApiKey != "" {
@@ -186,26 +186,26 @@ func selectPlatform(tokens Tokens) (string, error) {
 	}
 
 	if len(platforms) == 0 {
-		return "", fmt.Errorf("nenhuma plataforma configurada em tokens.json")
+		return "", fmt.Errorf("no platform configured in tokens.json")
 	}
 
-	fmt.Println("\n=== Selecionar Plataforma ===")
+	fmt.Println("\n=== Select Platform ===")
 	for i, p := range platforms {
 		fmt.Printf("%d) %s\n", i+1, p)
 	}
-	fmt.Println("0) Cancelar")
-	fmt.Print("Escolha uma opção: ")
+	fmt.Println("0) Cancel")
+	fmt.Print("Choose an option: ")
 
 	reader := bufio.NewReader(os.Stdin)
 	input, err := reader.ReadString('\n')
 	if err != nil {
-		return "", fmt.Errorf("erro ao ler entrada: %w", err)
+		return "", fmt.Errorf("error reading input: %w", err)
 	}
 	input = strings.TrimSpace(input)
 
 	choice, err := strconv.Atoi(input)
 	if err != nil || choice < 0 || choice > len(platforms) {
-		return "", fmt.Errorf("opção inválida")
+		return "", fmt.Errorf("invalid option")
 	}
 	if choice == 0 {
 		return "", nil
@@ -213,210 +213,167 @@ func selectPlatform(tokens Tokens) (string, error) {
 	return platforms[choice-1], nil
 }
 
-// checkAPIStatus testa a conexão com a API de uma plataforma
+// checkAPIStatus tests the connection to a platform's API
 func checkAPIStatus(platform string) error {
-	// TODO: Refatorar esta função para evitar repetição de código.
-	// A lógica de fazer um GET e verificar o status code é a mesma para todas as plataformas.// handleManualScopeInsertion gerencia a inserção manual de um escopo no banco de dados.
-	func handleManualScopeInsertion() error {
-		fmt.Println("\n--- Inserir Escopo Manualmente ---")
-	
-		// 1. Selecionar a plataforma (reutilizando a função)
-		tokens, err := loadTokens()
-		if err != nil {
-			return fmt.Errorf("erro ao carregar tokens: %w", err)
-		}
-		platform, err := selectPlatform(tokens)
-		if err != nil {
-			return fmt.Errorf("erro ao selecionar plataforma: %w", err)
-		}
-		if platform == "" {
-			fmt.Println("Operação cancelada.")
-			return nil // Usuário cancelou
-		}
-	
-		// 2. Solicitar o escopo
-		fmt.Printf("Digite o escopo para a plataforma '%s' (ex: example.com): ", platform)
-		reader := bufio.NewReader(os.Stdin)
-		scope, _ := reader.ReadString('\n')
-		scope = strings.TrimSpace(scope)
-		if scope == "" {
-			return fmt.Errorf("o escopo não pode estar vazio")
-		}
-	
-		// 3. Inserir no banco de dados
-		dbConn, err := db.ConnectDB()
-		if err != nil {
-			return fmt.Errorf("erro ao conectar ao banco de dados: %w", err)
-		}
-		defer dbConn.Close()
-	
-		query := "INSERT INTO scopes (platform, scope) VALUES ($1, )"
-		if _, err := dbConn.Exec(query, platform, scope); err != nil {
-			return fmt.Errorf("erro ao executar a inserção no banco de dados: %w", err)
-		}
-	
-		fmt.Printf("\n[+] Sucesso! Escopo '%s' inserido para a plataforma '%s'.\n", scope, platform)
-		return nil
-	}
-	
-	// Criar uma função auxiliar `testEndpoint(platformName, url)` que recebe a URL e o nome da plataforma, e então chamar essa função dentro do switch.
-	switch platform {
+	// TODO: Refactor this function to avoid code repetition.
+	// The logic of making a GET and checking the status code is the same for all platforms.
+	// Create a helper function `testEndpoint(platformName, url)` that receives the URL and platform name, and then call that function inside the switch.
+	sswitch platform {
 	case "hackerone":
-		fmt.Println("Testando a conexão com a API do HackerOne...")
-		url := "https://api.hackerone.com/reports" // Use um endpoint público e leve
+		fmt.Println("Testing connection to HackerOne API...")
+		url := "https://api.hackerone.com/reports" // Use a public and lightweight endpoint
 		resp, err := http.Get(url)
 		if err != nil {
-			return fmt.Errorf("erro ao conectar à API do HackerOne: %w", err)
+			return fmt.Errorf("error connecting to HackerOne API: %w", err)
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("API do HackerOne retornou status code: %d", resp.StatusCode)
+			return fmt.Errorf("HackerOne API returned status code: %d", resp.StatusCode)
 		}
 		return nil
 	case "bugcrowd":
-		fmt.Println("Testando a conexão com a API do Bugcrowd...")
-		url := "https://api.bugcrowd.com/programs" // Endpoint público
+		fmt.Println("Testing connection to Bugcrowd API...")
+		url := "https://api.bugcrowd.com/programs" // Public endpoint
 		resp, err := http.Get(url)
 		if err != nil {
-			return fmt.Errorf("erro ao conectar à API do Bugcrowd: %w", err)
+			return fmt.Errorf("error connecting to Bugcrowd API: %w", err)
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("API do Bugcrowd retornou status code: %d", resp.StatusCode)
+			return fmt.Errorf("Bugcrowd API returned status code: %d", resp.StatusCode)
 		}
 		return nil
 
 	case "intigriti":
-		fmt.Println("Testando a conexão com a API do Intigriti...")
-		url := "https://api.intigriti.com/core/v1/programs" // Endpoint público
+		fmt.Println("Testing connection to Intigriti API...")
+		url := "https://api.intigriti.com/core/v1/programs" // Public endpoint
 		resp, err := http.Get(url)
 		if err != nil {
-			return fmt.Errorf("erro ao conectar à API do Intigriti: %w", err)
+			return fmt.Errorf("error connecting to Intigriti API: %w", err)
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("API do Intigriti retornou status code: %d", resp.StatusCode)
+			return fmt.Errorf("Intigriti API returned status code: %d", resp.StatusCode)
 		}
 		return nil
 	case "yeswehack":
-		fmt.Println("Testando a conexão com a API do YesWeHack...")
+		fmt.Println("Testing connection to YesWeHack API...")
 		url := "https://api.yeswehack.com/api/v1/programs"
 		resp, err := http.Get(url)
 		if err != nil {
-			return fmt.Errorf("erro ao conectar à API do YesWeHack: %w", err)
+			return fmt.Errorf("error connecting to YesWeHack API: %w", err)
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("API do YesWeHack retornou status code: %d", resp.StatusCode)
+			return fmt.Errorf("YesWeHack API returned status code: %d", resp.StatusCode)
 		}
 
 		return nil
 
 	}
-	return fmt.Errorf("plataforma %s não suportada", platform)
+	return fmt.Errorf("platform %s not supported", platform)
 }
 
-// handleManualScopeInsertion gerencia a inserção manual de um escopo no banco de dados.
-func handleManualScopeInsertion() error { // AGORA DELEGA PARA O MAESTRO
-	fmt.Println("\n--- Inserir Escopo Manualmente ---")
+// handleManualScopeInsertion manages the manual insertion of a scope into the database.
+func handleManualScopeInsertion() error { // NOW DELEGATES TO THE MAESTRO
+	fmt.Println("\n--- Insert Scope Manually ---")
 
-	// 1. Selecionar a plataforma
+	// 1. Select the platform
 	tokens, err := loadTokens()
 	if err != nil {
-		return fmt.Errorf("erro ao carregar tokens: %w", err)
+		return fmt.Errorf("error loading tokens: %w", err)
 	}
 	platform, err := selectPlatform(tokens)
 	if err != nil {
-		return fmt.Errorf("erro ao selecionar plataforma: %w", err)
+		return fmt.Errorf("error selecting platform: %w", err)
 	}
 	if platform == "" {
-		fmt.Println("Operação cancelada.")
-		return nil // Usuário cancelou
+		fmt.Println("Operation cancelled.")
+		return nil // User cancelled
 	}
 
-	// 2. Solicitar o escopo
-	fmt.Printf("Digite o escopo para a plataforma '%s' (ex: example.com): ", platform)
+	// 2. Request the scope
+	fmt.Printf("Enter the scope for platform '%s' (e.g., example.com): ", platform)
 	reader := bufio.NewReader(os.Stdin)
 	scope, _ := reader.ReadString('\n')
 	scope = strings.TrimSpace(scope)
 	if scope == "" {
-		return fmt.Errorf("o escopo não pode estar vazio")
+		return fmt.Errorf("scope cannot be empty")
 	}
 
-	// 3. Criar a ordem para a tarefa 'insertScope' com os dados e disparar o maestro
+	// 3. Create the order for the 'insertScope' task with the data and trigger the maestro
 	orderData := map[string]string{"scope": scope}
 	if err := utils.CreateExecutionOrder("insertScope", platform, orderData); err != nil {
-		return fmt.Errorf("erro ao criar ordem de inserção: %w", err)
+		return fmt.Errorf("error creating insertion order: %w", err)
 	}
 
-	fmt.Println("\nOrdem de inserção criada. Disparando o maestro...")
+	fmt.Println("\nInsertion order created. Triggering maestro...")
 	triggerMaestro()
 	return nil
 }
 
-// showScopes foi removido daqui e sua lógica movida para db.ShowScopes,
-// para ser chamada pelo maestro.
-
+// triggerMaestro writes the order and executes the maestro, monitoring the log.
 func triggerMaestro() {
-	// 1. Executar o maestro em um novo processo
-	fmt.Println("\n[+] Disparando o maestro... Acompanhe o progresso abaixo.")
-	// É mais eficiente executar o binário compilado do que usar 'go run'
-	cmd := exec.Command("./bin/maestro") // Assumindo que o binário está em ./bin/maestro
-	cmd.Stderr = os.Stderr               // Redireciona o Stderr do maestro para o Stderr do show_time
+	// 1. Execute the maestro in a new process
+	fmt.Println("\n[+] Triggering maestro... Follow the progress below.")
+	// It is more efficient to execute the compiled binary than to use 'go run'
+	cmd := exec.Command("./bin/maestro") // Assuming the binary is in ./bin/maestro
+	cmd.Stderr = os.Stderr               // Redirects the maestro's Stderr to show_time's Stderr
 
-	// 2. Iniciar o monitoramento do log em uma goroutine
+	// 2. Start monitoring the log in a goroutine
 	var wg sync.WaitGroup
 	wg.Add(1)
-	// Usar context para cancelamento é mais idiomático em Go
+	// Using context for cancellation is more idiomatic in Go
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel() // Garante que o cancelamento seja chamado no final
+	defer cancel() // Ensures cancellation is called at the end
 
 	go func() {
 		defer wg.Done()
-		time.Sleep(500 * time.Millisecond) // Pequena espera para o maestro criar o arquivo de log
-		// Carrega env.json para encontrar o caminho do log
-		var envConfig struct {
-			Archives struct {
-				LogDir string `json:"log_dir"`
-			} `json:"archives"`
-		}
-		if err := utils.LoadJSON("env.json", &envConfig); err != nil {
-			fmt.Printf("\n[ERROR] Não foi possível encontrar o diretório de log do maestro: %v\n", err)
+		time.Sleep(500 * time.Millisecond) // Small wait for the maestro to create the log file
+		// Load env.json to find the log path
+		env, err := utils.LoadEnvConfig()
+		if err != nil {
+			fmt.Printf("\n[ERROR] Could not find maestro log directory: %v\n", err)
 			return
 		}
-		logPath := filepath.Join(envConfig.Archives.LogDir, "maestro_execution.log")
+		logDir, ok := env.Path["log_dir"]
+		if !ok {
+			fmt.Printf("\n[ERROR] log_dir not found in env.json\n")
+			return
+		}
+		logPath := filepath.Join(logDir, "maestro_execution.log")
 		tailLogFile(ctx, logPath)
 	}()
 
-	// Inicia o comando e espera ele terminar
+	// Start the command and wait for it to finish
 	if err := cmd.Start(); err != nil {
-		fmt.Printf("Erro ao iniciar o maestro: %v\n", err)
+		fmt.Printf("Error starting maestro: %v\n", err)
 		return
 	}
 
 	err := cmd.Wait()
-	cancel()  // Sinaliza para a goroutine de tail parar
-	wg.Wait() // Espera a goroutine de tail terminar
+	cancel()  // Signals the tail goroutine to stop
+	wg.Wait() // Waits for the tail goroutine to finish
 
 	if err != nil {
-		fmt.Printf("\n[-] Maestro finalizou com erro.\n")
+		fmt.Printf("\n[-] Maestro finished with an error.\n")
 	} else {
-		fmt.Println("\n[+] Maestro concluiu a execução com sucesso.")
+		fmt.Println("\n[+] Maestro finished execution successfully.")
 	}
 }
 
-// tailLogFile monitora um arquivo de log e imprime novas linhas.
+// tailLogFile monitors a log file and prints new lines.
 func tailLogFile(ctx context.Context, filepath string) {
-	// Usando uma biblioteca de tail para uma implementação mais robusta.
-	// Ela lida com a criação de arquivos e é eficiente.
+	// Using a tail library for a more robust implementation.
+	// It handles file creation and is efficient.
 	t, err := tail.TailFile(filepath, tail.Config{
-		Follow:    true,  // Segue o arquivo (como tail -f)
-		ReOpen:    true,  // Tenta reabrir o arquivo se ele for rotacionado ou recriado
-		MustExist: false, // Não falha se o arquivo não existir no início
-		Poll:      true,  // Usa polling, bom para sistemas de arquivos de rede ou quando inotify falha
+		Follow:    true,  // Follow the file (like tail -f)
+		ReOpen:    true,  // Try to reopen the file if it is rotated or recreated
+		MustExist: false, // Does not fail if the file does not exist at the beginning
+		Poll:      true,  // Uses polling, good for network file systems or when inotify fails
 	})
 	if err != nil {
-		fmt.Printf("\n[ERROR] Falha ao iniciar o monitoramento do log: %v\n", err)
+		fmt.Printf("\n[ERROR] Failed to start log monitoring: %v\n", err)
 		return
 	}
 
@@ -424,111 +381,5 @@ func tailLogFile(ctx context.Context, filepath string) {
 		fmt.Print("[Maestro] ", line.Text)
 	}
 
-	<-ctx.Done() // Espera o sinal de cancelamento
-}
-	if err != nil {
-		return fmt.Errorf("erro ao conectar ao banco de dados: %w", err)
-	}
-	defer db.Close()
-
-	query := "SELECT scope FROM scopes WHERE platform = $1"
-	rows, err := db.Query(query, platform)
-	if err != nil {
-		return fmt.Errorf("erro ao executar consulta de escopos para %s: %w", platform, err)
-	}
-	defer rows.Close()
-
-	fmt.Printf("\n=== Escopos disponíveis para %s ===\n", platform)
-	count := 0
-	for rows.Next() {
-		var scope string
-		if err := rows.Scan(&scope); err != nil {
-			return fmt.Errorf("erro ao ler escopo: %w", err)
-		}
-		fmt.Printf("- %s\n", scope)
-		count++
-	}
-
-	if count == 0 {
-		fmt.Printf("Nenhum escopo encontrado para %s.\n", platform)
-	} else {
-		fmt.Printf("Total de escopos encontrados: %d\n", count)
-	}
-
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("erro ao iterar resultados: %w", err)
-	}
-
-	return nil
-}
-
-// triggerMaestro escreve a ordem e executa o maestro, monitorando o log.
-func triggerMaestro() {
-	// 1. Executar o maestro em um novo processo
-	fmt.Println("\n[+] Disparando o maestro... Acompanhe o progresso abaixo.")
-	// É mais eficiente executar o binário compilado do que usar 'go run'
-	cmd := exec.Command("./bin/maestro") // Assumindo que o binário está em ./bin/maestro
-	cmd.Stderr = os.Stderr               // Redireciona o Stderr do maestro para o Stderr do show_time
-
-	// 2. Iniciar o monitoramento do log em uma goroutine
-	var wg sync.WaitGroup
-	wg.Add(1)
-	// Usar context para cancelamento é mais idiomático em Go
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel() // Garante que o cancelamento seja chamado no final
-
-	go func() {
-		defer wg.Done()
-		time.Sleep(500 * time.Millisecond) // Pequena espera para o maestro criar o arquivo de log
-		// Carrega env.json para encontrar o caminho do log
-		var envConfig struct {
-			Archives struct {
-				LogDir string `json:"log_dir"`
-			} `json:"archives"`
-		}
-		if err := utils.LoadJSON("env.json", &envConfig); err != nil {
-			fmt.Printf("\n[ERROR] Não foi possível encontrar o diretório de log do maestro: %v\n", err)
-			return
-		}
-		logPath := filepath.Join(envConfig.Archives.LogDir, "maestro_execution.log")
-		tailLogFile(ctx, logPath)
-	}()
-
-	// Inicia o comando e espera ele terminar
-	if err := cmd.Start(); err != nil {
-		fmt.Printf("Erro ao iniciar o maestro: %v\n", err)
-		return
-	}
-
-	err := cmd.Wait()
-	cancel()  // Sinaliza para a goroutine de tail parar
-	wg.Wait() // Espera a goroutine de tail terminar
-
-	if err != nil {
-		fmt.Printf("\n[-] Maestro finalizou com erro.\n")
-	} else {
-		fmt.Println("\n[+] Maestro concluiu a execução com sucesso.")
-	}
-}
-
-// tailLogFile monitora um arquivo de log e imprime novas linhas.
-func tailLogFile(ctx context.Context, filepath string) {
-	// Usando uma biblioteca de tail para uma implementação mais robusta.
-	// Ela lida com a criação de arquivos e é eficiente.
-	t, err := tail.TailFile(filepath, tail.Config{
-		Follow:    true,  // Segue o arquivo (como tail -f)
-		ReOpen:    true,  // Tenta reabrir o arquivo se ele for rotacionado ou recriado
-		MustExist: false, // Não falha se o arquivo não existir no início
-		Poll:      true,  // Usa polling, bom para sistemas de arquivos de rede ou quando inotify falha
-	})
-	if err != nil {
-		fmt.Printf("\n[ERROR] Falha ao iniciar o monitoramento do log: %v\n", err)
-		return
-	}
-
-	for line := range t.Lines {
-		fmt.Print("[Maestro] ", line.Text)
-	}
-
-	<-ctx.Done() // Espera o sinal de cancelamento
+	<-ctx.Done() // Waits for the cancellation signal
 }
