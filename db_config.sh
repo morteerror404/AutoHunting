@@ -462,14 +462,40 @@ EOF
 config_generic_menu() {
     while true; do
         echo -e "${BOLD}${GREEN}=== Configuração do $SELECTED_DB ===${NC}"
-        echo "1) Criar serviço de inicialização do $SELECTED_DB"
-        echo "2) Criar banco 'bughunt' e registrar marker"
-        echo "3) Criar usuário logger (autohunt_logger)"
-        echo "4) Conectar automaticamente ao Metasploit"
+        echo "1) Instalar o $SELECTED_DB"
+        echo "2) Criar serviço de inicialização do $SELECTED_DB"
+        echo "3) Criar banco 'bughunt' e registrar marker"
+        echo "4) Criar usuário logger (autohunt_logger)"
+        echo "5) Conectar automaticamente ao Metasploit"
         echo "0) Voltar"
         read -rp "Escolha: " opt
         case "$opt" in
             1)
+                case "$SELECTED_DB" in
+                    mariadb)
+                        install_db "MariaDB" "mariadb-server mariadb-client" "mariadb"
+                        ;;
+                    mysql)
+                        install_db "MySQL" "mysql-server mysql-client" "mysql"
+                        ;;
+                    mongodb)
+                        install_db "MongoDB" "mongodb mongodb-org" "mongod mongodb"
+                        ;;
+                    sqlite)
+                        install_db "SQLite" "sqlite3" ""
+                        ;;
+                    postgresql)
+                        install_db "PostgreSQL" "postgresql postgresql-contrib" "postgresql"
+                        ;;
+                    *)
+                        log "ERROR" "Seleção de DB inválida para instalação: $SELECTED_DB"
+                        echo -e "${RED}Erro: Seleção de DB inválida para instalação: $SELECTED_DB${NC}"
+                        ;;
+                esac
+                log "INFO" "Tentativa de instalação do $SELECTED_DB concluída."
+                ;;
+
+            2)
                 case "$SELECTED_DB" in
                     mariadb)
                         if [ -n "$SERVICE_CMD" ]; then
@@ -510,13 +536,13 @@ config_generic_menu() {
                 esac
                 log "INFO" "$SELECTED_DB configurado para iniciar com o sistema."
                 ;;
-            2)
+            3)
                 create_bughunt_db "$SELECTED_DB"
                 ;;
-            3)
+            4)
                 create_logger_user "$SELECTED_DB"
                 ;;
-            4)
+            5)
                 ensure_metasploit_db "$SELECTED_DB"
                 connect_metasploit
                 ;;
@@ -542,37 +568,21 @@ select_db_menu() {
             1)
                 SELECTED_DB="mariadb"
                 log "INFO" "Selecionado: MariaDB"
-                install_db "MariaDB" "mariadb-server mariadb-client" "mariadb" || {
-                    log "ERROR" "Falha na instalação MariaDB"
-                    echo -e "${RED}Erro: Falha na instalação MariaDB${NC}"
-                }
                 config_generic_menu
                 ;;
             2)
                 SELECTED_DB="mysql"
                 log "INFO" "Selecionado: MySQL"
-                install_db "MySQL" "mysql-server mysql-client" "mysql" || {
-                    log "ERROR" "Falha na instalação MySQL"
-                    echo -e "${RED}Erro: Falha na instalação MySQL${NC}"
-                }
                 config_generic_menu
                 ;;
             3)
                 SELECTED_DB="mongodb"
                 log "INFO" "Selecionado: MongoDB"
-                install_db "MongoDB" "mongodb mongodb-org" "mongod mongodb" || {
-                    log "ERROR" "Falha na instalação MongoDB"
-                    echo -e "${RED}Erro: Falha na instalação MongoDB${NC}"
-                }
                 config_generic_menu
                 ;;
             4)
                 SELECTED_DB="sqlite"
                 log "INFO" "Selecionado: SQLite"
-                install_db "SQLite" "sqlite3" "sqlite" || {
-                    log "ERROR" "Falha na instalação SQLite"
-                    echo -e "${RED}Erro: Falha na instalação do SQLite${NC}"
-                }
                 config_generic_menu
                 ;;
 
@@ -581,10 +591,6 @@ select_db_menu() {
             5)
                 SELECTED_DB="postgresql"
                 log "INFO" "Selecionado: PostgreSQL"
-                install_db "PostgreSQL" "postgresql postgresql-contrib" "postgresql" || {
-                    log "ERROR" "Falha na instalação PostgreSQL"
-                    echo -e "${RED}Erro: Falha na instalação PostgreSQL${NC}"
-                }
                 config_generic_menu
                 ;;
 
