@@ -22,6 +22,10 @@ TOOLS_PREFIX=${TOOLS_PREFIX:-/opt/autohunting}
 GOINSTALL_BIN=${GOINSTALL_BIN:-$(command -v go || true)}
 mkdir -p "$TOOLS_PREFIX" >/dev/null 2>&1 || true
 TOOLS_PM_INSTALLED=()
+RETENTION_SCRIPT="/usr/local/bin/autohunt_retention_cleanup.sh"
+CRON_MARKER="/etc/cron.d/autohunt_retention"
+RETENTION_DAYS=30
+
 TOOLS_GIT_INSTALLED=()
 GIT_INSTALL_DIR=""  # diretório personalizado fornecido pelo usuário
 MAX_JOBS=4  # para parallelização de instalações
@@ -50,7 +54,7 @@ show_menu_principal() {
     echo " 3) Configurar serviço de inicialização automática"
     echo " 4) Configurar diretório para arquivos JSON"
     echo " 5) Declarar caminhos personalizados"
-    echo " 6) Configuração especifica de JSON" 
+    echo " 6) Configuração especifica de JSON"
     echo " 7) Imunizar/Desimunizar um banco de dados"
     echo " 0) Voltar"
     echo
@@ -96,6 +100,7 @@ show_menu_servicos() {
     echo " 2) Criar o serviço para iniciar uma rotina especifica"
     echo " 3) Mostrar rotinas criadas"
     echo " 4) Excluir uma rotina" 
+    echo " 5) Gerenciar política de retenção de dados (Cron)"
     echo " 0) Voltar"
     echo
 }
@@ -105,6 +110,16 @@ show_menu_Wordlist() {
     echo -e "--------------------------------\n"
     echo " 1) Deseja configurar manualmente "
     echo " 2) Mapear cada wordlists automaticamente"
+    echo " 0) Voltar"
+    echo
+}
+
+show_menu_retention() {
+    echo -e "\n=== Política de Retenção de Dados ==="
+    echo -e "-------------------------------------\n"
+    echo " 1) Ativar e configurar cron de retenção"
+    echo " 2) Desativar cron de retenção"
+    echo " 3) Definir dias de retenção (atual: $RETENTION_DAYS)"
     echo " 0) Voltar"
     echo
 }
@@ -189,6 +204,144 @@ handle_immunize_menu() {
     fi
 }
 
+install_retention_script() {
+    log "INFO" "Escrevendo script de retenção em $RETENTION_SCRIPT"
+    cat > "$RETENTION_SCRIPT" <<'EOF'
+#!/usr/bin/env bash
+# autohunt_retention_cleanup.sh
+MARKER_DIR="/var/lib/autohunt/markers"
+RETENTION_DAYS_DEFAULT=30
+LOGFILE="/var/log/autohunting_install.log" # Ajustado para o log do ambiente
+log() { printf '[%s] [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" "$2" | tee -a "$LOGFILE"; }
+RETENTION_DAYS="${RETENTION_DAYS:-$RETENTION_DAYS_DEFAULT}"
+for marker in "$MARKER_DIR"/*.marker 2>/dev/null; do
+    [ -f "$marker" ] || continue
+    stamp=$(cat "$marker" 2>/dev/null || echo 0)
+    if ! [[ "$stamp" =~ ^[0-9]+$ ]]; then
+        log "WARN" "Marker $marker invalid timestamp"
+        continue
+    fi
+    age_days=$(( ( $(date +%s) - stamp ) / 86400 ))
+    base=$(basename "$marker")
+    name="${base%%.*}"
+    dbtype="${base#*.}"
+    dbtype="${dbtype%.marker}"
+    if [ -f "$MARKER_DIR/${name}.${dbtype}.immunized" ]; then
+        log "DEBUG" "Marker $marker is immunized, skipping."
+        continue
+    fi
+    if [ "$age_days" -ge "$RETENTION_DAYS" ]; then
+        log "INFO" "Marker $marker age $age_days >= $RETENTION_DAYS: removing database $name for $dbtype"
+        case "$dbtype" in
+            postgresql)
+                if command -v psql >/dev/null 2>&1; then
+                    sudo -u postgres psql -c "DROP DATABASE IF EXISTS ${name};" 2>&1 | tee -a "$LOGFILE" || log "ERROR" "Failed drop ${name} on postgres"
+                else
+                    log "ERROR" "psql não encontrado."
+                fi
+                ;;
+            mariadb|mysql)
+                if command -v mysql >/dev/null 2>&1; then
+                    mysql -u root -e "DROP DATABASE IF EXISTS \`${name}\`;" 2>&1 | tee -a "$LOGFILE" || log "ERROR" "Failed drop ${name} on mysql/mariadb"
+                else
+                    log "ERROR" "mysql client não encontrado."
+                fi
+                ;;
+            mongodb)
+                local mongo_cmd
+                if command -v mongosh >/dev/null 2>&1; then
+                    mongo_cmd="mongosh"
+                elif command -v mongo >/dev/null 2>&1; then
+                    mongo_cmd="mongo"
+                else
+                    log "ERROR" "Nem mongosh nem mongo encontrados."
+                    continue
+                fi
+                $mongo_cmd --quiet --eval "db.getSiblingDB('${name}').dropDatabase()" 2>&1 | tee -a "$LOGFILE" || log "ERROR" "Failed drop ${name} on mongodb"
+                ;;
+            *)
+                log "WARN" "Unknown db type: $dbtype for marker $marker"
+                ;;
+        esac
+        mv "$marker" "${marker}.removed.$(date +%s)" 2>&1 | tee -a "$LOGFILE" || rm -f "$marker" 2>&1 | tee -a "$LOGFILE"
+        log "INFO" "Database ${name} removal attempted and marker archived/removed."
+    else
+        log "DEBUG" "Marker $marker age $age_days (<$RETENTION_DAYS) -> keep"
+    fi
+done
+EOF
+    chmod 750 "$RETENTION_SCRIPT"
+    log "INFO" "Script de retenção escrito e autorizado em $RETENTION_SCRIPT"
+}
+
+install_terminal_warning() {
+    local warnfile="/etc/profile.d/autohunt_retention_warning.sh"
+    cat > "$warnfile" <<'EOF'
+#!/usr/bin/env bash
+MARKER_DIR="/var/lib/autohunt/markers"
+MANAGER="config_enviroment.sh" # Aponta para o script correto
+for m in "$MARKER_DIR"/*.marker 2>/dev/null; do
+    [ -f "$m" ] || continue
+    name="$(basename "$m")"
+    base="${name%.marker}"
+    db="$(echo "$base" | awk -F. '{print $2}')"
+    item="$(echo "$base" | awk -F. '{print $1}')"
+    stamp=$(cat "$m" 2>/dev/null || echo 0)
+    if ! [[ "$stamp" =~ ^[0-9]+$ ]]; then continue; fi
+    RETENTION_DAYS=${RETENTION_DAYS:-30}
+    expiry=$((stamp + (RETENTION_DAYS * 86400)))
+    now=$(date +%s)
+    if [ "$expiry" -gt "$now" ]; then
+        seconds_left=$((expiry - now))
+        days_left=$((seconds_left / 86400))
+        hours_left=$(((seconds_left % 86400) / 3600))
+        echo -e "\033[1;33mAVISO AUTOhunt: O banco de dados '\033[1;31m$item\033[0;33m' (tipo: \033[1;31m$db\033[0;33m) será excluído em \033[1;31m${days_left}\033[0;33m dias e \033[1;31m${hours_left}\033[0;33m horas\033[0m"
+        echo -e "Para imunizar, execute o script de configuração de ambiente e escolha a opção de imunização."
+        echo
+    fi
+done
+EOF
+    chmod 644 "$warnfile"
+    log "INFO" "Aviso de retenção instalado em $warnfile."
+}
+
+remove_terminal_warning() {
+    local warnfile="/etc/profile.d/autohunt_retention_warning.sh"
+    if [ -f "$warnfile" ]; then
+        rm -f "$warnfile"
+        log "INFO" "Aviso de retenção removido ($warnfile)."
+    fi
+}
+
+enable_retention_cron() {
+    verifica_root
+    install_retention_script
+
+    echo -e "${BLUE}Configurando cron job de retenção:${NC}"
+    read -p "Horário do cron (HH:MM, padrão 03:30): " cron_time
+    cron_time="${cron_time:-03:30}"
+    read -p "Frequência (1-Diária, 2-Semanal, 3-Mensal, padrão 1): " freq_opt
+
+    local cron_min="${cron_time#*:}"
+    local cron_hour="${cron_time%:*}"
+    local cron_daymonth="*" cron_month="*" cron_dayweek="*"
+    case "$freq_opt" in
+        2) cron_dayweek="0" ;; # Domingo
+        3) cron_daymonth="1" ;; # Dia 1 do mês
+    esac
+
+    echo "$cron_min $cron_hour $cron_daymonth $cron_month $cron_dayweek root $RETENTION_SCRIPT" > "$CRON_MARKER"
+    chmod 644 "$CRON_MARKER"
+    log "SUCCESS" "Cron de retenção ativado: $CRON_MARKER"
+    install_terminal_warning
+}
+
+disable_retention_cron() {
+    verifica_root
+    rm -f "$CRON_MARKER"
+    log "INFO" "Cron de retenção desativado."
+    remove_terminal_warning
+}
 
 # ===============================
 # Funções de Lógica
@@ -677,6 +830,27 @@ while true; do
                 esac
             done
             ;;
+        5)
+            while true; do
+                show_menu_retention
+                read -p "Escolha uma opção: " retention_opcao
+                case $retention_opcao in
+                    1)
+                        enable_retention_cron
+                        ;;
+                    2)
+                        disable_retention_cron
+                        ;;
+                    3)
+                        read -p "Dias de retenção [atual: $RETENTION_DAYS]: " days
+                        RETENTION_DAYS="${days:-$RETENTION_DAYS}"
+                        log "INFO" "RETENTION_DAYS definido para $RETENTION_DAYS"
+                        ;;
+                    0) break ;;
+                    *) echo -e "\n[!] Opção inválida.\n" ;;
+                esac
+            done
+            ;;
         4)
             while true; do
                 show_menu_archives
@@ -1057,6 +1231,10 @@ done
                 esac
             done
             ;;
+        7)
+            handle_immunize_menu
+            ;;
+        0) echo "Saindo..."; exit 0 ;;
         *)
             echo -e "\n[!] Opção inválida.\n"
             ;;

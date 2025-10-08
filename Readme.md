@@ -165,7 +165,6 @@ O comportamento do AutoHunting é controlado por um conjunto de arquivos JSON no
               └── SecList(exemple)/
 ```
 
-
 *   **`commands.json`:** Define os modelos de linha de comando para os scanners de segurança. Isso permite que você personalize facilmente os comandos que são executados pelo `runner`.
 *   **`tokens.json`:** Armazena os tokens de API para as plataformas de bug bounty.
 *   **`order-templates.json`:** Contém modelos para as ordens de execução que o `maestro` segue. Isso permite que você defina diferentes fluxos de trabalho para diferentes tarefas.
