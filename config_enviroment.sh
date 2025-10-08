@@ -51,6 +51,7 @@ show_menu_principal() {
     echo " 4) Configurar diretório para arquivos JSON"
     echo " 5) Declarar caminhos personalizados"
     echo " 6) Configuração especifica de JSON" 
+    echo " 7) Imunizar/Desimunizar um banco de dados"
     echo " 0) Voltar"
     echo
 }
@@ -126,6 +127,66 @@ show_menu_logs() {
     echo " 3) Configurar política de retenção de logs"
     echo " 0) Voltar"
     echo
+}
+
+immunize_item() {
+    local name="$1"
+    local dbtype="$2"
+    local immun_file="/var/lib/autohunt/markers/${name}.${dbtype}.immunized"
+    
+    if [ -f "$immun_file" ]; then
+        read -p "Este item já está imunizado. Deseja remover a imunização? (s/N): " confirm
+        if [[ "$confirm" =~ ^[sS]$ ]]; then
+            rm -f "$immun_file"
+            echo -e "${GREEN}Imunização de '$name' ($dbtype) removida.${NC}"
+        fi
+    else
+        touch "$immun_file"
+        chmod 600 "$immun_file"
+        echo -e "${GREEN}Item '$name' ($dbtype) foi imunizado contra a política de retenção.${NC}"
+    fi
+}
+
+handle_immunize_menu() {
+    local marker_dir="/var/lib/autohunt/markers"
+    
+    echo -e "\n[*] Listando bancos de dados com marcadores de retenção..."
+    
+    local markers=()
+    while IFS= read -r marker_file; do
+        markers+=("$marker_file")
+    done < <(find "$marker_dir" -name "*.marker")
+
+    if [ ${#markers[@]} -eq 0 ]; then
+        echo -e "${YELLOW}Nenhum banco de dados com marcador de retenção encontrado.${NC}"
+        return
+    fi
+
+    for i in "${!markers[@]}"; do
+        local base_name=$(basename "${markers[$i]}" .marker)
+        local db_name=${base_name%%.*}
+        local db_type=${base_name#*.}
+        
+        local status=""
+        if [ -f "$marker_dir/${db_name}.${db_type}.immunized" ]; then
+            status="${GREEN}(Imunizado)${NC}"
+        else
+            status="${YELLOW}(Não Imunizado)${NC}"
+        fi
+        echo " $((i+1))) $db_name ($db_type) $status"
+    done
+    
+    read -p "Escolha o número do banco de dados para imunizar/desimunizar (ou 0 para sair): " choice
+    
+    if [[ "$choice" -gt 0 && "$choice" -le ${#markers[@]} ]]; then
+        local selected_marker=${markers[$((choice-1))]}
+        local base_name=$(basename "$selected_marker" .marker)
+        local db_name=${base_name%%.*}
+        local db_type=${base_name#*.}
+        immunize_item "$db_name" "$db_type"
+    else
+        echo "Seleção inválida ou cancelada."
+    fi
 }
 
 

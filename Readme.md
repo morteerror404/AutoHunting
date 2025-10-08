@@ -136,6 +136,36 @@ O pacote `utils` agrupa funções auxiliares e genéricas que são utilizadas po
 O comportamento do AutoHunting é controlado por um conjunto de arquivos JSON no diretório `config/json`:
 
 *   **`env.json`:** Contém as principais configurações de ambiente, como caminhos de arquivo para logs, resultados e outros dados.
+
+```txt 
+/
+└── etc
+    └── AutoHunting
+        ├── api_result_clean/
+        ├── api_result_dirt/
+        ├── Clean/
+        ├── Dirt/
+        ├── json/
+        ├── maestro/
+        │   └── escopos/
+        ├── maestro_status.json
+        └── order.json
+```
+
+```txt
+  tmp/
+    └── AutoHunting/
+                └── log/
+```
+
+```txt
+/usr
+  └── share/
+        └── wordlist/
+              └── SecList(exemple)/
+```
+
+
 *   **`commands.json`:** Define os modelos de linha de comando para os scanners de segurança. Isso permite que você personalize facilmente os comandos que são executados pelo `runner`.
 *   **`tokens.json`:** Armazena os tokens de API para as plataformas de bug bounty.
 *   **`order-templates.json`:** Contém modelos para as ordens de execução que o `maestro` segue. Isso permite que você defina diferentes fluxos de trabalho para diferentes tarefas.
@@ -163,3 +193,4 @@ go run cmd/show_time.go
 *   **Abstração de SQL:** As consultas SQL no `db_manager` podem ser abstraídas para suportar diferentes sistemas de banco de dados.
 *   **Interpretação de Escopo Baseada em IA:** Um módulo de IA pode ser adicionado para interpretar o escopo de um programa a partir de descrições em linguagem natural.
 *   **Painel Web:** Um painel baseado na web pode ser criado para visualizar os resultados e gerenciar a aplicação.
+
