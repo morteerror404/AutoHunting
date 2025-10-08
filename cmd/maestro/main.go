@@ -72,14 +72,17 @@ type MaestroOrder struct {
 	Platform string              `json:"platform"`
 	Task     string              `json:"task"`
 	Steps    []utils.MaestroTask `json:"steps"`
+	Data     map[string]string   `json:"data,omitempty"` // Campo genérico para dados extras
 }
 
 func main() {
+	log.Println("Iniciando fluxo de execução padrão do maestro a partir da ordem...")
+
 	if err := runMaestro(); err != nil {
 		// O erro já foi logado dentro de runMaestro, apenas saímos com status de erro.
 		os.Exit(1)
 	}
-	fmt.Println("Maestro concluiu a execução com sucesso.")
+	log.Println("Maestro concluiu a execução com sucesso.")
 }
 
 func runMaestro() error {
@@ -116,6 +119,10 @@ func runMaestro() error {
 			stepErr = stepCleanResults(ctx)
 		case "StoreResults":
 			stepErr = stepStoreResults(ctx)
+		case "insertScope":
+			stepErr = stepInsertScope(ctx)
+		case "listScopes":
+			stepErr = stepListScopes(ctx)
 		default:
 			stepErr = fmt.Errorf("passo desconhecido na ordem de execução: %s", step.Step)
 		}
@@ -210,6 +217,41 @@ func stepStoreResults(ctx *MaestroContext) error {
 		}
 	}
 	return nil
+}
+
+// stepInsertScope conecta ao DB e insere um único escopo lido da ordem de execução.
+func stepInsertScope(ctx *MaestroContext) error {
+	platform := ctx.Order.Platform
+	scope, ok := ctx.Order.Data["scope"]
+	if !ok || scope == "" {
+		return fmt.Errorf("dado 'scope' não encontrado ou vazio na ordem de execução para a tarefa 'insertScope'")
+	}
+
+	dbConn, err := db.ConnectDB()
+	if err != nil {
+		return fmt.Errorf("erro ao conectar ao banco de dados: %w", err)
+	}
+	defer dbConn.Close()
+
+	query := "INSERT INTO scopes (platform, scope) VALUES ($1, $2)"
+	if _, err := dbConn.Exec(query, platform, scope); err != nil {
+		return fmt.Errorf("erro ao executar a inserção no banco de dados: %w", err)
+	}
+
+	log.Printf("Sucesso! Escopo '%s' inserido para a plataforma '%s'.\n", scope, platform)
+	return nil
+}
+
+// stepListScopes conecta ao DB e lista os escopos de uma plataforma lida da ordem.
+func stepListScopes(ctx *MaestroContext) error {
+	platform := ctx.Order.Platform
+	dbConn, err := db.ConnectDB()
+	if err != nil {
+		return fmt.Errorf("erro ao conectar ao banco de dados: %w", err)
+	}
+	defer dbConn.Close()
+
+	return db.ShowScopes(platform, dbConn)
 }
 
 func setupLogging(ctx *MaestroContext) error {

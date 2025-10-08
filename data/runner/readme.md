@@ -1,73 +1,93 @@
-# Módulo `runner` - Executor de Ferramentas de Varredura
+# Módulo `runner` - Motor de Execução
 
-## Descrição
+**Localização:** `data/runner/runner.go`
 
-O `runner.go` (dentro do pacote `runner`) é o motor de execução do `AutoHunting`. Sua responsabilidade é pegar a lista de alvos, já processada e unificada pelo módulo `results`, e executar ferramentas de varredura externas (como Nmap e Ffuf) contra cada um desses alvos.
+## Visão Geral
 
-Ele opera de forma concorrente, utilizando um pool de workers (goroutines) para realizar múltiplas varreduras em paralelo, otimizando drasticamente o tempo total do processo de reconhecimento. Os resultados brutos de cada ferramenta são salvos em arquivos individuais no diretório "dirt" para serem processados pela próxima etapa do pipeline, o `cleaner`.
+O `runner` é o "motor" ou os "braços" do sistema AutoHunting. Sua única e crucial responsabilidade é executar ferramentas de segurança externas (como Nmap, Ffuf, etc.) de forma controlada e concorrente. Ele recebe ordens diretas do `Maestro`, executa os comandos contra uma lista de alvos e salva os resultados brutos para processamento posterior pelo módulo `cleaner`.
 
-## Funcionalidades Principais
+Ele é projetado para ser robusto, com controle de tempo de execução (timeout) e capacidade de executar múltiplas varreduras simultaneamente para otimizar o tempo total da "caçada".
 
-- **Execução Paralela**: Utiliza um pool de workers para escanear múltiplos alvos simultaneamente, aumentando a eficiência.
-- **Suporte a Múltiplas Ferramentas**: Estruturado para executar diferentes ferramentas de linha de comando (atualmente `nmap` e `ffuf`).
-- **Construção Dinâmica de Comandos**: Monta os argumentos de comando específicos para cada ferramenta e alvo, como a definição do arquivo de saída XML (`-oX`) para o Nmap.
-- **Controle de Timeout**: Cada execução de comando tem um timeout definido, evitando que o processo inteiro fique travado por uma única varredura lenta ou com falha.
-- **Armazenamento de Resultados Brutos**: Salva a saída completa (stdout) de cada ferramenta em um arquivo único, nomeado de forma a identificar a ferramenta e o alvo, garantindo que nenhum dado seja perdido.
-- **Parsing Preliminar (Nmap)**: Inclui lógica para fazer o parsing do XML de saída do Nmap, fornecendo um relatório imediato e legível no console.
+## Arquitetura e Fluxo de Execução
 
-## Descrição das Funções
-
-- **`Run(targetsFile, args, outDir, tool)`**
-  - **Propósito**: É o ponto de entrada principal do módulo, orquestrando a execução de uma ferramenta específica.
-  - **Funcionamento**: Lê o arquivo de alvos, cria o diretório de saída e configura um pool de workers. Distribui os alvos para os workers através de um canal (`tasks`) e aguarda a conclusão de todos os trabalhos.
-
-- **`worker(id, tasks, results, ...)`**
-  - **Propósito**: A função executada por cada goroutine. É o verdadeiro executor da varredura.
-  - **Funcionamento**: Fica em um loop, recebendo alvos do canal `tasks`. Para cada alvo, constrói os argumentos do comando, executa a ferramenta usando `runCommandContext`, processa a saída (fazendo o parsing do XML do Nmap, se aplicável) e salva o resultado bruto em um arquivo.
-
-- **`runCommandContext(ctx, bin, args...)`**
-  - **Propósito**: Função utilitária para executar um comando externo com um `context` (para controle de timeout).
-  - **Funcionamento**: Encapsula a chamada `exec.CommandContext`, que permite que o comando seja finalizado se o `context` for cancelado (por exemplo, por um timeout).
-
-- **`parseNmapXML(xmlBytes, target)`**
-  - **Propósito**: Converter a saída XML complexa do Nmap em um relatório de texto simples e legível.
-  - **Funcionamento**: Usa as structs `NmapRun`, `Host`, `Port`, etc., para decodificar o XML em estruturas de dados do Go. Em seguida, itera sobre essas estruturas para formatar um relatório amigável, mostrando o status do host e as portas abertas com seus serviços.
-
-- **`sanitizeFilename(s)`**
-  - **Propósito**: Garantir que um alvo (como uma URL ou IP) possa ser usado como parte de um nome de arquivo válido.
-  - **Funcionamento**: Substitui caracteres inválidos em nomes de arquivo (como `:`, `/`, `*`) por underscores.
-
-- **`NmapRun`, `Host`, `Port`, etc. (structs)**
-  - **Propósito**: Mapear a estrutura do arquivo de saída XML do Nmap.
-  - **Funcionamento**: As tags `xml:"..."` em cada campo da struct dizem ao decodificador `xml.Unmarshal` como associar os elementos e atributos do XML aos campos da struct, automatizando o parsing.
-
-## Fluxo de Funcionamento
+O `runner` é um módulo especializado que é ativado durante a etapa `RunScanners` do fluxo do `Maestro`.
 
 ```txt
-INÍCIO DA VARREDURA
+INÍCIO DA EXECUÇÃO DO SCANNER
 
 (1) Ativação pelo Orquestrador (`maestro.go`)
-    -> O `maestro` executa o passo `stepRunScanners`.
-    -> Para cada ferramenta a ser executada (ex: nmap, ffuf), ele invoca `runner.Run()`.
-    -> Parâmetros fornecidos:
-        - `targetsFile`: O caminho para o arquivo de alvos unificado (ex: `targets_for_scanning.txt`).
-        - `args`: Os argumentos de linha de comando para a ferramenta (ex: "-p- -sV").
-        - `outDir`: O diretório onde os resultados brutos serão salvos (`tool_dirt_dir`).
-        - `tool`: O nome da ferramenta a ser executada ("nmap").
+    -> O `Maestro` chega na etapa "RunScanners".
+    -> Invoca a função `runner.Run(tool, argTemplate, targets, outDir)`.
+       - `tool`: O nome da ferramenta (ex: "nmap").
+       - `argTemplate`: O comando com placeholders (ex: "-p- -sV {TARGET}").
+       - `targets`: A lista de alvos a serem escaneados.
+       - `outDir`: O diretório para salvar os resultados brutos.
 
-(2) Configuração do Runner
-    -> `runner.Run` lê os alvos e inicia um pool de workers (ex: 5 goroutines).
-    -> Os alvos são enviados para um canal de tarefas.
+(2) Runner em Ação: Preparação
+    -> A função `Run()` cria o diretório de saída, se não existir.
+    -> Configura um "pool de workers":
+       - Cria um canal `tasks` para distribuir os alvos.
+       - Cria um canal `results` para coletar feedback.
+       - Inicia um `sync.WaitGroup` para sincronizar a finalização de todas as tarefas.
 
-(3) Execução Concorrente
-    -> Cada worker pega um alvo do canal.
-    -> Monta o comando completo (ex: `nmap -p- -sV -oX <output_path> <target_ip>`).
-    -> Executa o comando com um timeout.
-    -> Salva a saída XML bruta no `outDir`.
-    -> Imprime um resumo formatado no console.
+(3) Runner em Ação: Distribuição e Execução
+    -> A função `Run()` inicia várias goroutines (workers).
+    -> Envia cada alvo da lista `targets` para o canal `tasks`.
 
-(4) Próxima Etapa no Fluxo
-    -> Os arquivos de resultado brutos (XML, JSON, etc.) gerados no `tool_dirt_dir` se tornam a entrada para o módulo `cleaner`, que irá extrair as informações úteis.
+(4) Lógica do Worker (Execução Concorrente)
+    -> Cada worker pega um alvo do canal `tasks`.
+    -> Substitui os placeholders no `argTemplate` pelo alvo atual (ex: `{TARGET}` vira "example.com").
+    -> Chama `runCommandContext()` para executar o comando da ferramenta com um timeout definido.
 
-FIM DA VARREDURA
+(5) Processamento e Armazenamento do Resultado
+    -> O worker captura a saída bruta (stdout) do comando.
+    -> Gera um nome de arquivo único (ex: "nmap_example.com_timestamp.txt").
+    -> Salva a saída bruta nesse arquivo dentro do diretório `outDir`.
+    -> Se a ferramenta for `nmap`, ele também tenta fazer um parse do XML para um formato mais legível no log.
+    -> Envia uma mensagem de status para o canal `results`.
+
+(6) Finalização
+    -> A função `Run()` aguarda (usando `wg.Wait()`) que todos os workers terminem.
+    -> Coleta e imprime todas as mensagens do canal `results`.
+    -> Retorna o controle para o `Maestro`, que pode então prosseguir para a próxima etapa (ex: "CleanResults").
+
+FIM DA EXECUÇÃO DO SCANNER
 ```
+
+## Detalhamento das Funções Principais
+
+### `Run(tool, argTemplate string, targets []string, outDir string) error`
+
+É a função principal e ponto de entrada do módulo. Ela orquestra toda a lógica de execução concorrente.
+
+-   **Parâmetros**:
+    -   `tool`: O nome do executável da ferramenta (ex: "nmap").
+    -   `argTemplate`: A string de argumentos, contendo placeholders como `{TARGET}` ou `{IP}`.
+    -   `targets`: Um slice de strings, onde cada string é um alvo para a varredura.
+    -   `outDir`: O caminho do diretório onde os arquivos de saída brutos serão salvos.
+-   **Lógica**: Configura e gerencia um pool de workers para processar a lista de `targets` em paralelo, garantindo que os resultados sejam salvos corretamente.
+
+### `worker` (Função anônima dentro de `Run`)
+
+Esta é a função executada por cada goroutine. Ela contém a lógica de uma única tarefa de varredura.
+
+-   Recebe um alvo do canal de tarefas.
+-   Prepara os argumentos do comando substituindo os placeholders.
+-   Chama `runCommandContext` para executar a ferramenta com um timeout.
+-   Salva a saída bruta em um arquivo de texto no diretório de resultados.
+
+### `runCommandContext(ctx context.Context, bin string, args ...string) ([]byte, error)`
+
+Uma função utilitária que executa um comando externo. Sua principal vantagem é a integração com `context.Context`, o que permite cancelar a execução do comando se ele demorar mais do que o timeout definido, evitando que o sistema fique preso em uma varredura infinita.
+
+### `parseNmapXML(xmlBytes []byte, target string) string`
+
+Uma função especializada para tratar a saída XML do Nmap (`-oX`). Ela faz o parse do XML e formata as informações de portas, serviços e status de uma maneira mais legível para os logs, facilitando a depuração.
+
+### `sanitizeFilename(s string) string`
+
+Função de segurança e conveniência que remove caracteres inválidos de uma string (como `:`, `/`, `*`) para que ela possa ser usada como um nome de arquivo válido e seguro no sistema de arquivos.
+
+## Estruturas de Dados (`structs`)
+
+-   **`NmapRun`, `Host`, `Port`, etc.**: Um conjunto de estruturas de dados usadas exclusivamente pela função `parseNmapXML`. Elas mapeiam a estrutura do arquivo de saída XML gerado pelo Nmap, permitindo que o Go decodifique o XML de forma nativa.

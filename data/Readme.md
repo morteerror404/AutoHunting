@@ -1,26 +1,5 @@
 ## **Data Flow – Bug Bounty Site Checker**
 
-```mermaid
-flowchart TD
-    A[Usuário] -->|Fornece tokens ou arquivo de URLs| B[Entrada de Dados]
-    B --> C{Coleta de Targets}
-    C -->|HackerOne| D[fetchHackerOneScopes]
-    C -->|Bugcrowd| E[fetchBugcrowdScopes]
-    C -->|Intigriti| F[fetchIntigritiScopes]
-    C -->|YesWeHack| G[fetchYesWeHackScopes]
-    D --> H[Lista de Targets]
-    E --> H
-    F --> H
-    G --> H
-    B -->|Arquivo de URLs| H
-    H --> I[Fila de Jobs HTTP]
-    I -->|Workers concorrentes| J[Requests HTTP para cada Target]
-    J --> K[Parse HTML / Extrai Título]
-    K --> L[Cria SiteResult JSON]
-    L --> M[Coleta de todos resultados]
-    M --> N[Salva em results.json]
-    N --> O[Usuário visualiza relatórios / logs]
-```
 
 ---
 

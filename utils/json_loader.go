@@ -15,9 +15,10 @@ type MaestroTask struct {
 }
 
 type MaestroOrder struct {
-	Platform string        `json:"platform"`
-	Task     string        `json:"task"`
-	Steps    []MaestroTask `json:"steps"`
+	Platform string            `json:"platform"`
+	Task     string            `json:"task"`
+	Steps    []MaestroTask     `json:"steps"`
+	Data     map[string]string `json:"data,omitempty"`
 }
 
 // LoadJSON carrega um arquivo JSON do diretório json/ e decodifica para a estrutura fornecida
@@ -37,7 +38,7 @@ func LoadJSON(filename string, v interface{}) error {
 }
 
 // CreateExecutionOrder gera o arquivo de ordem para o maestro.
-func CreateExecutionOrder(task, platform string) error {
+func CreateExecutionOrder(task, platform string, data map[string]string) error {
 	// 1. Carregar env.json para obter os caminhos
 	var envConfig struct {
 		Archives struct {
@@ -74,6 +75,7 @@ func CreateExecutionOrder(task, platform string) error {
 		Platform: platform,
 		Task:     task,
 		Steps:    steps,
+		Data:     data,
 	}
 
 	// 5. Serializar e salvar o arquivo de ordem final para o maestro

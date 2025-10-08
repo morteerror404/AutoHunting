@@ -175,3 +175,37 @@ func ProcessCleanFile(filename string, db *sql.DB) error {
 	fmt.Printf("Processamento concluído. %d registros inseridos na tabela %s.\n", insertCount, tableName)
 	return nil
 }
+
+// ShowScopes consulta e exibe os escopos disponíveis para uma plataforma.
+// Esta função é chamada pelo maestro para executar a tarefa de listagem.
+func ShowScopes(platform string, db *sql.DB) error {
+	query := "SELECT scope FROM scopes WHERE platform = $1"
+	rows, err := db.Query(query, platform)
+	if err != nil {
+		return fmt.Errorf("erro ao executar consulta de escopos para %s: %w", platform, err)
+	}
+	defer rows.Close()
+
+	fmt.Printf("\n=== Escopos disponíveis para %s ===\n", platform)
+	count := 0
+	for rows.Next() {
+		var scope string
+		if err := rows.Scan(&scope); err != nil {
+			return fmt.Errorf("erro ao ler escopo: %w", err)
+		}
+		fmt.Printf("- %s\n", scope)
+		count++
+	}
+
+	if count == 0 {
+		fmt.Printf("Nenhum escopo encontrado para %s.\n", platform)
+	} else {
+		fmt.Printf("Total de escopos encontrados: %d\n", count)
+	}
+
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("erro ao iterar resultados: %w", err)
+	}
+
+	return nil
+}

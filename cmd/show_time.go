@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/morteerror404/AutoHunting/data/db"
 	"github.com/hpcloud/tail" //  biblioteca de tail robusta
+	"github.com/morteerror404/AutoHunting/data/db"
 	"github.com/morteerror404/AutoHunting/utils"
 )
 
@@ -86,7 +86,7 @@ func handleHuntMenu() {
 
 	// Cria a ordem e dispara o maestro
 	task := "fullHunt" // Deve corresponder à chave em order-templates.json
-	if err := utils.CreateExecutionOrder(task, platform); err != nil {
+	if err := utils.CreateExecutionOrder(task, platform, nil); err != nil {
 		fmt.Printf("Erro ao criar ordem de execução para o maestro: %v\n", err)
 		return
 	}
@@ -97,28 +97,44 @@ func handleDBMenu() {
 	// Lógica para o menu do banco de dados
 	fmt.Println("\n--- Menu Banco de Dados ---")
 	fmt.Println("1) Listar escopos de uma plataforma")
+	fmt.Println("2) Inserir escopo manualmente")
 	fmt.Println("0) Voltar")
 	fmt.Print("Escolha: ")
 	reader := bufio.NewReader(os.Stdin)
 	input, _ := reader.ReadString('\n')
 	choice := strings.TrimSpace(input)
 
-	if choice == "1" {
-		tokens, err := loadTokens()
-		if err != nil {
-			fmt.Printf("Erro ao carregar tokens: %v\n", err)
-			return
-		}
-		platform, err := selectPlatform(tokens)
-		if err != nil {
-			fmt.Printf("Erro ao selecionar plataforma: %v\n", err)
-			return
-		}
-		if platform != "" {
-			if err := showScopes(platform); err != nil {
-				fmt.Printf("Erro ao buscar escopos: %v\n", err)
+	switch choice {
+	case "1":
+		{
+			tokens, err := loadTokens()
+			if err != nil {
+				fmt.Printf("Erro ao carregar tokens: %v\n", err)
+				return
+			}
+			platform, err := selectPlatform(tokens)
+			if err != nil {
+				fmt.Printf("Erro ao selecionar plataforma: %v\n", err)
+				return
+			}
+			if platform != "" {
+				// Cria a ordem para a tarefa 'listScopes' e dispara o maestro
+				if err := utils.CreateExecutionOrder("listScopes", platform, nil); err != nil {
+					fmt.Printf("Erro ao criar ordem de listagem: %v\n", err)
+				} else {
+					fmt.Println("\nOrdem de listagem criada. Disparando o maestro...")
+					triggerMaestro()
+				}
 			}
 		}
+	case "2":
+		if err := handleManualScopeInsertion(); err != nil {
+			fmt.Printf("Erro ao inserir escopo: %v\n", err)
+		}
+	case "0":
+		return
+	default:
+		fmt.Println("Opção inválida.")
 	}
 }
 
@@ -200,7 +216,49 @@ func selectPlatform(tokens Tokens) (string, error) {
 // checkAPIStatus testa a conexão com a API de uma plataforma
 func checkAPIStatus(platform string) error {
 	// TODO: Refatorar esta função para evitar repetição de código.
-	// A lógica de fazer um GET e verificar o status code é a mesma para todas as plataformas.
+	// A lógica de fazer um GET e verificar o status code é a mesma para todas as plataformas.// handleManualScopeInsertion gerencia a inserção manual de um escopo no banco de dados.
+	func handleManualScopeInsertion() error {
+		fmt.Println("\n--- Inserir Escopo Manualmente ---")
+	
+		// 1. Selecionar a plataforma (reutilizando a função)
+		tokens, err := loadTokens()
+		if err != nil {
+			return fmt.Errorf("erro ao carregar tokens: %w", err)
+		}
+		platform, err := selectPlatform(tokens)
+		if err != nil {
+			return fmt.Errorf("erro ao selecionar plataforma: %w", err)
+		}
+		if platform == "" {
+			fmt.Println("Operação cancelada.")
+			return nil // Usuário cancelou
+		}
+	
+		// 2. Solicitar o escopo
+		fmt.Printf("Digite o escopo para a plataforma '%s' (ex: example.com): ", platform)
+		reader := bufio.NewReader(os.Stdin)
+		scope, _ := reader.ReadString('\n')
+		scope = strings.TrimSpace(scope)
+		if scope == "" {
+			return fmt.Errorf("o escopo não pode estar vazio")
+		}
+	
+		// 3. Inserir no banco de dados
+		dbConn, err := db.ConnectDB()
+		if err != nil {
+			return fmt.Errorf("erro ao conectar ao banco de dados: %w", err)
+		}
+		defer dbConn.Close()
+	
+		query := "INSERT INTO scopes (platform, scope) VALUES ($1, )"
+		if _, err := dbConn.Exec(query, platform, scope); err != nil {
+			return fmt.Errorf("erro ao executar a inserção no banco de dados: %w", err)
+		}
+	
+		fmt.Printf("\n[+] Sucesso! Escopo '%s' inserido para a plataforma '%s'.\n", scope, platform)
+		return nil
+	}
+	
 	// Criar uma função auxiliar `testEndpoint(platformName, url)` que recebe a URL e o nome da plataforma, e então chamar essa função dentro do switch.
 	switch platform {
 	case "hackerone":
@@ -258,9 +316,116 @@ func checkAPIStatus(platform string) error {
 	return fmt.Errorf("plataforma %s não suportada", platform)
 }
 
-// showScopes consulta e exibe os escopos disponíveis para uma plataforma
-func showScopes(platform string) error {
-	db, err := db.ConnectDB()
+// handleManualScopeInsertion gerencia a inserção manual de um escopo no banco de dados.
+func handleManualScopeInsertion() error { // AGORA DELEGA PARA O MAESTRO
+	fmt.Println("\n--- Inserir Escopo Manualmente ---")
+
+	// 1. Selecionar a plataforma
+	tokens, err := loadTokens()
+	if err != nil {
+		return fmt.Errorf("erro ao carregar tokens: %w", err)
+	}
+	platform, err := selectPlatform(tokens)
+	if err != nil {
+		return fmt.Errorf("erro ao selecionar plataforma: %w", err)
+	}
+	if platform == "" {
+		fmt.Println("Operação cancelada.")
+		return nil // Usuário cancelou
+	}
+
+	// 2. Solicitar o escopo
+	fmt.Printf("Digite o escopo para a plataforma '%s' (ex: example.com): ", platform)
+	reader := bufio.NewReader(os.Stdin)
+	scope, _ := reader.ReadString('\n')
+	scope = strings.TrimSpace(scope)
+	if scope == "" {
+		return fmt.Errorf("o escopo não pode estar vazio")
+	}
+
+	// 3. Criar a ordem para a tarefa 'insertScope' com os dados e disparar o maestro
+	orderData := map[string]string{"scope": scope}
+	if err := utils.CreateExecutionOrder("insertScope", platform, orderData); err != nil {
+		return fmt.Errorf("erro ao criar ordem de inserção: %w", err)
+	}
+
+	fmt.Println("\nOrdem de inserção criada. Disparando o maestro...")
+	triggerMaestro()
+	return nil
+}
+
+// showScopes foi removido daqui e sua lógica movida para db.ShowScopes,
+// para ser chamada pelo maestro.
+
+func triggerMaestro() {
+	// 1. Executar o maestro em um novo processo
+	fmt.Println("\n[+] Disparando o maestro... Acompanhe o progresso abaixo.")
+	// É mais eficiente executar o binário compilado do que usar 'go run'
+	cmd := exec.Command("./bin/maestro") // Assumindo que o binário está em ./bin/maestro
+	cmd.Stderr = os.Stderr               // Redireciona o Stderr do maestro para o Stderr do show_time
+
+	// 2. Iniciar o monitoramento do log em uma goroutine
+	var wg sync.WaitGroup
+	wg.Add(1)
+	// Usar context para cancelamento é mais idiomático em Go
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel() // Garante que o cancelamento seja chamado no final
+
+	go func() {
+		defer wg.Done()
+		time.Sleep(500 * time.Millisecond) // Pequena espera para o maestro criar o arquivo de log
+		// Carrega env.json para encontrar o caminho do log
+		var envConfig struct {
+			Archives struct {
+				LogDir string `json:"log_dir"`
+			} `json:"archives"`
+		}
+		if err := utils.LoadJSON("env.json", &envConfig); err != nil {
+			fmt.Printf("\n[ERROR] Não foi possível encontrar o diretório de log do maestro: %v\n", err)
+			return
+		}
+		logPath := filepath.Join(envConfig.Archives.LogDir, "maestro_execution.log")
+		tailLogFile(ctx, logPath)
+	}()
+
+	// Inicia o comando e espera ele terminar
+	if err := cmd.Start(); err != nil {
+		fmt.Printf("Erro ao iniciar o maestro: %v\n", err)
+		return
+	}
+
+	err := cmd.Wait()
+	cancel()  // Sinaliza para a goroutine de tail parar
+	wg.Wait() // Espera a goroutine de tail terminar
+
+	if err != nil {
+		fmt.Printf("\n[-] Maestro finalizou com erro.\n")
+	} else {
+		fmt.Println("\n[+] Maestro concluiu a execução com sucesso.")
+	}
+}
+
+// tailLogFile monitora um arquivo de log e imprime novas linhas.
+func tailLogFile(ctx context.Context, filepath string) {
+	// Usando uma biblioteca de tail para uma implementação mais robusta.
+	// Ela lida com a criação de arquivos e é eficiente.
+	t, err := tail.TailFile(filepath, tail.Config{
+		Follow:    true,  // Segue o arquivo (como tail -f)
+		ReOpen:    true,  // Tenta reabrir o arquivo se ele for rotacionado ou recriado
+		MustExist: false, // Não falha se o arquivo não existir no início
+		Poll:      true,  // Usa polling, bom para sistemas de arquivos de rede ou quando inotify falha
+	})
+	if err != nil {
+		fmt.Printf("\n[ERROR] Falha ao iniciar o monitoramento do log: %v\n", err)
+		return
+	}
+
+	for line := range t.Lines {
+		fmt.Print("[Maestro] ", line.Text)
+	}
+
+	<-ctx.Done() // Espera o sinal de cancelamento
+}
 	if err != nil {
 		return fmt.Errorf("erro ao conectar ao banco de dados: %w", err)
 	}
