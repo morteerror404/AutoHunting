@@ -143,36 +143,60 @@ O `install.sh` é um script Bash projetado para automatizar a instalação de fe
 ## Estrutura do Script
 
 ```txt
-│ install.sh
-│ Readme.md
-│ go.mod
-│
-├───config
+│   config_enviroment.sh
 │   db_config.sh
-│   README.md
-│
-├───json
-│   cleaner-templates.json
-│   commands.json
-│   db_info.json
-│   env.json
-│   tokens.json
+│   go.mod
+│   go.sum
+│   install.sh
+│   Readme.md
+│   TODO.md
 │
 ├───api
-│   request_api.go
-│
-├───data
-│   cleaner.go
-│   db_manager.go
-│   process_results.go
-│   runner.go
+│       readme.md
+│       request_api.go
 │
 ├───cmd
-│   maestro.go
-│   show_time.go
+│   │   readme.md
+│   │   show_time.go
+│   │
+│   └───maestro
+│           main.go
+│           readme.md
+│
+├───config
+│   │   README.md
+│   │
+│   └───json
+│           cleaner-templates.json
+│           commands.json
+│           db_info.json
+│           env.json
+│           order-templates.json
+│           readme.md
+│           tokens.json
+│
+├───data
+│   │   Readme.md
+│   │
+│   ├───cleaner
+│   │       cleaner.go
+│   │       Readme.md
+│   │
+│   ├───db
+│   │       db_manager.go
+│   │       readme.md
+│   │
+│   ├───results
+│   │       process_results.go
+│   │       readme.md
+│   │
+│   └───runner
+│           readme.md
+│           runner.go
 │
 └───utils
-    json_loader.go
+        json_loader.go
+        readme.md
 ```
 
 ### Data flow setup
