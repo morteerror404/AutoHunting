@@ -2,7 +2,6 @@ package cleaner
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,15 +17,8 @@ type Template struct {
 	Fields []string `json:"fields"`
 }
 
-// TemplatePaths carrega o arquivo principal que mapeia ferramentas para seus arquivos de template.
-type TemplatePaths struct {
-	Templates map[string]string `json:"templates"`
-}
-
-// ToolTemplates carrega o conteúdo de um arquivo de template específico de uma ferramenta (ex: nmap.json).
-type ToolTemplates struct {
-	Templates map[string]Template `json:"templates"`
-}
+// AllToolTemplates carrega o arquivo cleaner-templates.json, que agora contém todos os templates.
+type AllToolTemplates map[string]map[string]Template
 
 // EnvConfig carrega os caminhos necessários do env.json.
 type EnvConfig struct {
@@ -44,44 +36,31 @@ func CleanFile(filename string, templateName string) error {
 		return fmt.Errorf("erro ao carregar env.json: %w", err)
 	}
 
-	// 1. Carrega o arquivo principal que contém os caminhos para os templates.
-	var templatePaths TemplatePaths
-	if err := utils.LoadJSON("cleaner-templates.json", &templatePaths); err != nil {
+	// 1. Carrega o arquivo centralizado que contém todos os templates.
+	var allTemplates AllToolTemplates
+	if err := utils.LoadJSON("cleaner-templates.json", &allTemplates); err != nil {
 		return fmt.Errorf("erro ao carregar cleaner-templates.json: %w", err)
 	}
 
-	// 2. IDENTIFICA A FERRAMENTA E O CAMINHO DO SEU TEMPLATE
-	var templateFilePath string
+	// 2. IDENTIFICA A FERRAMENTA E SELECIONA O TEMPLATE CORRETO
 	var toolName string
+	var selectedTemplate Template
+	var found bool
 	base := filepath.Base(filename)
 
-	for name, path := range templatePaths.Templates {
+	for name, toolTemplates := range allTemplates {
 		if strings.HasPrefix(base, name+"_") {
 			toolName = name
-			templateFilePath = path
+			if t, ok := toolTemplates[templateName]; ok {
+				selectedTemplate = t
+				found = true
+			}
 			break
 		}
 	}
 
-	if templateFilePath == "" {
-		return fmt.Errorf("nenhum template encontrado para o arquivo: %s", filename)
-	}
-
-	// 3. CARREGA O ARQUIVO DE TEMPLATE ESPECÍFICO DA FERRAMENTA
-	var toolTemplates ToolTemplates
-	templateData, err := os.ReadFile(templateFilePath)
-	if err != nil {
-		return fmt.Errorf("erro ao ler o arquivo de template '%s' para a ferramenta '%s': %w", templateFilePath, toolName, err)
-	}
-	if err := json.Unmarshal(templateData, &toolTemplates); err != nil {
-		return fmt.Errorf("erro ao decodificar o JSON do template '%s': %w", templateFilePath, err)
-	}
-
-	var selectedTemplate Template
-	if t, ok := toolTemplates.Templates[templateName]; ok {
-		selectedTemplate = t
-	} else {
-		return fmt.Errorf("template de limpeza '%s' não encontrado para a ferramenta '%s' em '%s'", templateName, toolName, templateFilePath)
+	if !found {
+		return fmt.Errorf("template de limpeza '%s' não encontrado para a ferramenta '%s' em 'cleaner-templates.json'", templateName, toolName)
 	}
 
 	// 4. LER O ARQUIVO DE RESULTADOS BRUTOS E APLICAR A LIMPEZA
