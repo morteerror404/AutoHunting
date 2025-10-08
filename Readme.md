@@ -1,8 +1,6 @@
-# AutoHunting - README
+# AutoHunting
 
-## Descrição
-
-**AutoHunting** é um framework de automação para bug bounty e pentesting, projetado para orquestrar um fluxo de trabalho de reconhecimento e varredura. Ele automatiza a coleta de escopos de plataformas de bug bounty, executa ferramentas de segurança como Nmap e Ffuf, limpa os resultados e os armazena em um banco de dados para análise.
+O **AutoHunting** é um framework para automação de tarefas de bug bounty e pentesting. Ele foi projetado para orquestrar um fluxo de trabalho de reconhecimento e varredura, automatizando a coleta de escopos de plataformas de bug bounty, executando ferramentas de segurança como Nmap e Ffuf, limpando os resultados e armazenando-os em um banco de dados para análise.
 
 O projeto é controlado por uma interface de linha de comando (CLI) interativa e é altamente configurável através de arquivos JSON, permitindo que os usuários personalizem comandos, ferramentas e fluxos de trabalho.
 
@@ -17,511 +15,151 @@ config:
 ---
 flowchart TD
 
-  %% ==========================================================
-  %% Subgraph de Configuração Inicial (SETUP)
-  %% ==========================================================
-  subgraph Setup
-    DB_Config[DB_Config.sh]
-    Install[Install.sh]
-  end
-  
-  %% ==========================================================
-  %% Subgraph de Coleta de Dados Brutos (INPUT)
-  %% ==========================================================
-  subgraph Request_API.go
-    A[tokens.json] --> ReqAPI_B[1. Consulta APIs de BB]
-    ReqAPI_B --> API_BB{APIs de Plataformas}
-    API_BB -- JSON Estruturado H1, etc. --> Proc_E
-    API_BB -- Texto/Link da Politica --> AI_D
+  subgraph "Interface do Usuário (show_time.go)"
+    A[Usuário] --> B{Menu Principal};
+    B --> C[1. Iniciar Caçada];
+    B --> D[2. Consultar Banco de Dados];
+    B --> E[3. Verificar Status da API];
   end
 
-  %% ==========================================================
-  %% Subgraph de Interpretacao de IA
-  %% ==========================================================
-  subgraph AI_scope_interpreter.go
-    AI_D[2. Envia Politica para LLM] --> AI_F[3. Recebe Array JSON de Alvos]
-    AI_F --> Proc_E
+  subgraph "Orquestrador (maestro/main.go)"
+    C --> F[Criar Ordem de Execução];
+    F --> G[Acionar Maestro];
+    G --> H{Executar Etapas};
   end
 
-  %% ==========================================================
-  %% Subgraph de Processamento e Limpeza
-  %% ==========================================================
-  subgraph Process_results.go
-    Proc_E[4. Unifica e Valida Conteudo - API + IA] --> F[5. TXT/Array JSON Limpo]
-    F --> DBM_G
+  subgraph "Módulos"
+    H -- "RequestAPI" --> I[api/request_api.go];
+    H -- "RunScanners" --> J[data/runner/runner.go];
+    H -- "CleanResults" --> K[data/cleaner/cleaner.go];
+    H -- "StoreResults" --> L[data/db/db_manager.go];
   end
 
-  %% ==========================================================
-  %% Subgraph de Gerenciamento do Banco de Dados
-  %% ==========================================================
-  subgraph DB_manager.go
-    H[Comandos SQL/Conexao] --> DBM_G[6. Armazena Comandos/Verifica Conexao]
-    DBM_G --> DBM_I[7. Insere/Atualiza Alvos na h1_structured_scopes]
-    DBM_I --> DB_I[DB: h1_structured_scopes]
-    
-    %% Conexão de Retorno do Cleaner
-    DBM_N[18. Insere Resultados no DB] --> DB_N[DB: tool_execution_results]
+  subgraph "Armazenamento de Dados"
+    M[config/*.json] --> G;
+    I --> N[Escopos Brutos];
+    J --> O[Resultados de Varredura Brutos];
+    K --> P[Resultados de Varredura Limpos];
+    L --> Q[Banco de Dados];
   end
 
-  %% ==========================================================
-  %% Subgraph de Analise e Priorizacao
-  %% ==========================================================
-  subgraph Show_Time.go
-    DB_I --> ST_J[8. Consome Escopos Ativos]
-    DB_N --> ST_J
-    
-    ST_J --> ST_K1[9. Gerar Relatorio Resumido]
-    ST_J --> ST_K2[10. Criar Mapa de Alvos para Val. Manual]
-    ST_J --> ST_K3[11. Criar Fila de Execucao Priorizada]
-    
-    ST_K1 --> Relatorio_Resumo[Relatorio/Dashboard]
-    ST_K2 --> Mapa_Manual[Mapa de Prioridade - Visual]
-    ST_K3 --> Fila_Maestro[Fila de Tarefas Priorizada]
-  end
-
-  %% ==========================================================
-  %% Subgraph de Orquestracao
-  %% ==========================================================
-  subgraph maestro.go
-    L[commands.json] --> M_L[12. Define Ordem e Comandos]
-    Fila_Maestro --> M_L
-    M_L --> R_R
-    M_L --> M_O[14. Cria Relatorio de Estado]
-  end
-  
-  %% ==========================================================
-  %% Subgraph de Execução Motor
-  %% ==========================================================
-  subgraph runner.go
-    R_R[13. Recebe Instrucoes/Analisa Checkpoint] --> Ferramentas[14. Roda Ferramenta]
-    Ferramentas --> Pasta_Bruta[15. Armazena Resultados Brutos]
-    R_R -- Checkpoint de Execucao --> DB_N
-  end
-
-  %% ==========================================================
-  %% Subgraph de Tratamento de Resultados e Limpeza
-  %% ==========================================================
-  subgraph cleaner.go
-    Pasta_Bruta --> C_P1[16. Análise Léxica - Palavra-Chave / Detecção de Vetores]
-    M_O --> C_P2[17. Limpa Log de Execucao]
-    C_P1 -- Achados Estruturados / JSON --> DBM_N
-    C_P2 --> Q[Log Limpo]
-  end
-
-
-  %% ==========================================================
-  %% FLUXO DE CONEXÃO
-  %% ==========================================================
-  
-  %% Setup Conexoes
-  Install --> R_R
-  DB_Config --> DBM_G
-```
-
-## Descrição
-O `install.sh` é um script Bash projetado para automatizar a instalação de ferramentas de segurança cibernética e reconciliação (recon) em sistemas Linux baseados em Arch (usando `pacman`), Debian (apt), Fedora (dnf/yum) ou outros sistemas compatíveis. Ele suporta instalações via gerenciadores de pacotes do sistema, Go, Python (pip), e clonagem de repositórios Git. O script é interativo, permitindo ao usuário selecionar categorias de ferramentas ou instalar todas de uma vez, com suporte a instalações paralelas para maior eficiência.
-
-## Funcionalidades
-- **Gerenciamento de Pacotes**: Detecta automaticamente o gerenciador de pacotes (`pacman`, `apt`, `dnf`, ou `yum`) e instala ferramentas compatíveis.
-- **Métodos de Instalação**:
-  - **Gerenciador de Pacotes**: Usa o gerenciador do sistema para instalar ferramentas disponíveis (e.g., `curl`, `nmap`).
-  - **Go**: Instala ferramentas Go-based com `go install` (e.g., `subfinder`, `nuclei`).
-  - **Pip**: Instala ferramentas Python-based com `pip3` (e.g., `wafw00f`, `linkfinder`).
-  - **Git**: Clona repositórios Git para ferramentas sem pacotes pré-compilados (e.g., `katana`, `reconftw`).
-- **Categorias de Ferramentas**:
-  - **Base**: Ferramentas essenciais (`curl`, `jq`, `git`, `nmap`, `go`, `python`).
-  - **Recon**: Ferramentas de reconciliação (`subfinder`, `amass`, `katana`, etc.).
-  - **Scanners**: Ferramentas de varredura (`nuclei`, `ffuf`, `nikto`, etc.).
-  - **Web**: Ferramentas para análise web (`gopherus`, `lfisuite`, etc.).
-  - **Aux**: Ferramentas auxiliares (`kiterunner`, `eyewitness`, etc.).
-  - **Misc**: Ferramentas diversas (`linkfinder`, `metasploit`, etc.).
-- **Paralelismo**: Instala até 4 pacotes simultaneamente (`MAX_JOBS=4`) para maior rapidez.
-- **Modo Simulação**: Suporta execução em modo *dry-run* (`DRY_RUN=1`) para testar sem alterações.
-- **Logging**: Gera logs detalhados em `/var/log/autohunting_install.log`.
-- **Resumo de Instalação**: Exibe um resumo das ferramentas instaladas, incluindo métodos usados.
-
-## Estrutura do Script
-
-```txt
-│   config_enviroment.sh
-│   db_config.sh
-│   go.mod
-│   go.sum
-│   install.sh
-│   Readme.md
-│   TODO.md
-│
-├───api
-│       readme.md
-│       request_api.go
-│
-├───cmd
-│   │   readme.md
-│   │   show_time.go
-│   │
-│   └───maestro
-│           main.go
-│           readme.md
-│
-├───config
-│   │   README.md
-│   │
-│   └───json
-│           cleaner-templates.json
-│           commands.json
-│           db_info.json
-│           env.json
-│           order-templates.json
-│           readme.md
-│           tokens.json
-│
-├───data
-│   │   Readme.md
-│   │
-│   ├───cleaner
-│   │       cleaner.go
-│   │       Readme.md
-│   │
-│   ├───db
-│   │       db_manager.go
-│   │       readme.md
-│   │
-│   ├───results
-│   │       process_results.go
-│   │       readme.md
-│   │
-│   └───runner
-│           readme.md
-│           runner.go
-│
-└───utils
-        json_loader.go
-        readme.md
-```
-
-### Data flow setup
-
-```txt
-
-INÍCIO DA INSTALAÇÃO E CONFIGURAÇÃO
-
-(1) Ponto de Partida: O Instalador
-install.sh 
-  -> Verifica Pré-requisitos (Sudo/Root, git, tee) e cria LOG.
-  -> Detecta S.O./Gerenciador de Pacotes (apt, dnf, etc.).
-  -> Exibe Menu de Ferramentas e instala as dependências escolhidas (3 Níveis de Prioridade).
-  -> Exibe Relatório de Resumo.
-  -> DIRECIONA o usuário para: config/db_config.sh
-
-(2) Configuração da Persistência (Banco de Dados)
-config/db_config.sh 
-  -> **PRIMEIRA CONFIGURAÇÃO DO USUÁRIO.**
-  -> Usuário Seleciona o SGBD (MariaDB, PostgreSQL, etc.).
-  -> Instala/Configura o SGBD (Usuário/Senha dedicados).
-  -> Pergunta sobre Serviço Systemd e Política de Retenção.
-  -> config/db_config.sh ENVIA DADOS DE CONEXÃO para -> utils/json_loader.go
-  -> utils/json_loader.go SALVA/ATUALIZA em -> json/db_info.json (Dados de conexão do DB)
-  -> DIRECIONA o usuário para: config/enviroment.sh
-
-(3) Configuração do Ambiente e Caminhos (Variáveis de Ambiente)
-config/enviroment.sh 
-  -> **SEGUNDA CONFIGURAÇÃO DO USUÁRIO.**
-  -> Usuário interage com o Menu (pastas SUJAS, LIMPAS, LOGS, WORDLISTs, etc.).
-  -> config/enviroment.sh ENVIA DADOS (os PAIRS "path" e "archives") para -> utils/json_loader.go
-  -> utils/json_loader.go SALVA/ATUALIZA em -> json/env.json (Paths de diretórios e arquivos)
-
-FIM DA CONFIGURAÇÃO DE AMBIENTE
+  D --> Q;
+  E --> I;
+  N --> J;
+  O --> K;
+  P --> L;
 
 ```
 
----
+## Como Funciona
 
-### Data flow Pos-setup
+O projeto é dividido em vários módulos, cada um com uma responsabilidade específica:
 
-```
-INÍCIO DA EXECUÇÃO DE TAREFAS
+### 1. `cmd/show_time.go` - A Interface do Usuário
 
-(1) Ponto de Entrada (Orquestrador)
-cmd/maestro.go (Ou qualquer outra ferramenta/Go Script)
-  -> **PRIMEIRA AÇÃO:** Solicita dados de configuração.
-  -> CHAMA -> utils/json_loader.go (solicitando, por exemplo, o path do commands.json ou do DB)
+Este é o ponto de entrada principal para o usuário. Ele fornece um menu CLI interativo para:
 
-(2) Gerenciamento Centralizado de Configuração
-utils/json_loader.go 
-  -> LÊ os arquivos de configuração (ex: json/env.json, json/db_info.json, json/tokens.json).
-  -> json/env.json: Fornece todos os *paths* de diretórios e arquivos essenciais.
-  -> json/db_info.json: Fornece as credenciais de conexão do DB.
+*   **Iniciar uma Caçada:** Esta opção aciona o fluxo de trabalho principal da aplicação. Ele solicita que o usuário selecione uma plataforma (por exemplo, HackerOne) e, em seguida, cria uma "ordem de execução" para o `maestro` seguir.
+*   **Consultar o Banco de Dados:** Esta opção permite que o usuário execute consultas no banco de dados, como listar os escopos de uma plataforma específica.
+*   **Verificar Status da API:** Esta opção verifica o status das APIs da plataforma de bug bounty para garantir que elas estejam acessíveis.
 
-(3) Distribuição de Dados
-utils/json_loader.go 
-  -> RETORNA as configurações (Paths, Credenciais, Tokens) para a Ferramenta Solicitante (ex: cmd/maestro.go).
+### 2. `cmd/maestro/main.go` - O Orquestrador
 
-(4) Execução da Tarefa e Acesso a Dados (Exemplo: Tarefa de DB)
-data/db/db_manager.go 
-  -> CHAMA -> utils/json_loader.go para obter o path do json/db_info.json e as credenciais.
-  -> data/db/db_manager.go conecta e realiza a operação no DB.
+O `maestro` é o coração do framework AutoHunting. Ele lê uma "ordem de execução" (um arquivo JSON) e executa uma série de etapas em uma sequência predefinida. As principais etapas são:
 
-(5) Execução da Tarefa e Acesso a Paths (Exemplo: Limpeza)
-data/cleaner/cleaner.go 
-  -> CHAMA -> utils/json_loader.go para obter:
-      - O path do `json/cleaner-templates.json`
-      - Os paths das pastas SUJAS/LIMPAS (via `json/env.json`).
-  -> data/cleaner/cleaner.go executa a limpeza e salva em um path definido no `env.json`.
+*   **`RequestAPI`:** Busca escopos de plataformas de bug bounty.
+*   **`RunScanners`:** Executa scanners de segurança (como Nmap e Ffuf) nos escopos coletados.
+*   **`CleanResults`:** Limpa e analisa a saída bruta dos scanners.
+*   **`StoreResults`:** Armazena os resultados limpos no banco de dados.
 
-FIM DO PROCESSO
-```
+O `maestro` é responsável por orquestrar todo o fluxo de trabalho, garantindo que cada etapa seja executada na ordem correta e que os dados fluam sem problemas entre os diferentes módulos.
 
----
+### 3. `utils/json_loader.go` - O Gerenciador de Configuração
 
-### Configurações
-- **Cores**: Usa códigos ANSI para mensagens coloridas no terminal.
-- **Variáveis**:
-  - `LOG_FILE`: `/var/log/autohunting_install.log` (log de saída).
-  - `TOOLS_PREFIX`: `/opt/autohunting` (diretório base para instalações).
-  - `GIT_INSTALL_DIR`: Diretório para clonagem Git (definido pelo usuário ou padrão).
-  - `MAX_JOBS`: 4 (máximo de instalações paralelas).
-  - `GIT_REPOS`: Array associativo mapeando ferramentas a URLs de repositórios Git.
+Este módulo utilitário é responsável por carregar e gerenciar os arquivos de configuração JSON. Ele fornece uma maneira centralizada de acessar os dados de configuração, facilitando a personalização do comportamento da aplicação.
 
-### Funções Principais
-- **`log_message`**: Registra mensagens com nível (INFO, ERROR, DEBUG, etc.) no terminal e log.
-- **`detect_package_manager`**: Identifica o gerenciador de pacotes do sistema.
-- **`_exec_install`**: Executa instalações via gerenciador de pacotes.
-- **`get_install_cmd`**: Define comandos especiais (Go, pip, ou Git) para ferramentas específicas.
-- **`pkg_binary_candidates`**: Mapeia ferramentas a seus binários para verificação.
-- **`is_installed`**: Verifica se uma ferramenta está instalada.
-- **`install_one`**: Instala uma ferramenta, seguindo esta ordem:
-  1. Verifica se já está instalada (`is_installed`).
-  2. Tenta método especial (Go/pip via `get_install_cmd`).
-  3. Usa gerenciador de pacotes (`_exec_install`).
-  4. Clona repositório Git como fallback (`GIT_REPOS`).
-- **`install_array`**: Instala múltiplas ferramentas em paralelo.
-- **`install_category_by_name`**: Instala ferramentas de uma categoria específica.
-- **`show_modules`**: Lista todas as categorias e ferramentas.
-- **`show_install_summary`**: Exibe resumo das instalações.
-- **`verifica_basico`**: Garante privilégios de root e dependências (`git`, `tee`).
-- **`configurar_log`**: Configura redirecionamento de logs.
-- **`print_menu`**: Exibe menu interativo.
-- **`main`**: Função principal que gerencia o fluxo do script.
+### 4. `api/request_api.go` - O Coletor de Escopo
 
-### Fluxo de Instalação
-Para cada ferramenta, o script tenta:
-1. **Verificar Instalação**: Se já instalada, pula.
-2. **Método Especial**: Usa Go (`go install`), pip (`pip3 install`), ou Git clone para ferramentas específicas.
-3. **Gerenciador de Pacotes**: Tenta instalar com `pacman`, `apt`, etc.
-4. **Git Clone**: Clona o repositório se outros métodos falharem.
+Este módulo é responsável por buscar escopos de plataformas de bug bounty. Atualmente, ele suporta o HackerOne e pode ser estendido para suportar outras plataformas como Bugcrowd, Intigriti e YesWeHack. Ele se autentica com a API da plataforma, busca os escopos do programa e os salva em um arquivo.
 
-## Pré-requisitos
-- Sistema Linux com `pacman`, `apt`, `dnf`, ou `yum`.
-- Privilégios de root (use `sudo`).
-- Dependências: `git`, `go`, `python3-pip`, `tee`.
-- Conexão com a internet para downloads e clonagem Git.
+### 5. `data/runner/runner.go` - O Executor de Scanner
 
-## Instalação e Uso
-1. **Configurar Permissões**:
-   Defina permissões seguras para os arquivos do script:
-   ```bash
-   sudo chmod 600 ./install.sh ; chmod 600 ./config/db_config.sh
-   ```
+Este módulo é responsável por executar os scanners de segurança externos. Ele recebe uma lista de alvos e um modelo de comando e, em seguida, executa o comando para cada alvo simultaneamente. Ele foi projetado para ser flexível e pode ser usado para executar qualquer ferramenta de linha de comando.
 
-2. **Instalar Dependências**:
-   Para sistemas baseados em Arch:
-   ```bash
-   sudo pacman -Syu
-   sudo pacman -S git go python-pip coreutils
-   ```
+### 6. `data/cleaner/cleaner.go` - O Analisador de Resultados
 
-3. **Executar o Script**:
-   ```bash
-   sudo ./install.sh
-   ```
-   - O script exibirá um menu interativo.
-   - Selecione opções (e.g., `2` para base, `3` para recon) ou múltiplas opções separadas por vírgula (e.g., `2,3`).
-   - Para sair, selecione `0`.
+Este módulo é responsável por limpar e analisar a saída bruta dos scanners. Ele usa expressões regulares definidas em modelos JSON para extrair dados estruturados da saída não estruturada das ferramentas. Isso permite uma maneira flexível e extensível de suportar diferentes ferramentas e formatos de saída.
 
-4. **Modo Simulação**:
-   Para testar sem instalar:
-   ```bash
-   DRY_RUN=1 sudo ./install.sh
-   ```
+### 7. `data/db/db_manager.go` - O Gerenciador de Banco de Dados
 
-5. **Verificar Logs**:
-   Consulte o log para detalhes ou erros:
-   ```bash
-   cat /var/log/autohunting_install.log
-   ```
+Este módulo é responsável por todas as interações com o banco de dados. Ele se conecta ao banco de dados, cria as tabelas necessárias e insere os dados limpos dos scanners. Ele também fornece funções para consultar o banco de dados.
 
---- 
+### 8. `data/results/process_results.go` - O Processador de Escopo
 
-# Resumo das funcionalidades de cada arquivo
+Este módulo é responsável por processar os escopos brutos coletados pelo módulo `api`. Ele unifica os escopos de diferentes fontes, remove duplicatas e cria uma lista limpa de alvos para o módulo `runner`.
 
-## 1. Install.sh
+## Detalhamento dos Módulos
 
-Este script é o instalador e configurador de ambiente, garantindo que todas as ferramentas estejam operacionais.
+### `api`
 
-1.  **Verificação de Pré-requisitos:**
-    * **Permissão Sudo:** Checa rigorosamente se o usuário tem permissão `sudo` ou é `root`. Se não, interrompe a execução.
-    * **Dependências Básicas:** Confirma a presença de `git` e `tee` para clonagem e *logging*.
-2.  **Configuração de Ambiente:**
-    * **Logging:** Cria e roteia toda a saída da instalação para um arquivo de *log* persistente, garantindo rastreabilidade.
-    * **Detecção de Sistema:** Identifica e configura o gerenciador de pacotes nativo do sistema (Ex: `apt`, `dnf`, `pacman`).
-3.  **Seleção Interativa:**
-    * Exibe um **Menu de Ferramentas** categorizado.
-    * Permite ao usuário escolher categorias ou ferramentas específicas para instalação.
-4.  **Lógica de Instalação Multicamadas:**
-    * **Prioridade 1:** Se a ferramenta já estiver instalada ou for um binário Go/Python com método de instalação especializado, executa o método otimizado.
-    * **Prioridade 2:** Tenta instalar via gerenciador de pacotes do sistema.
-    * **Prioridade 3 Fallback:** Se falhar nas anteriores, clona o repositório Git para um diretório local.
-5.  **Execução Otimizada:** Executa instalações em **paralelo** para otimizar o tempo de *setup*.
-6.  **Saída:** Exibe um **Relatório de Resumo** listando as ferramentas instaladas e o método de instalação usado para cada uma.
+O módulo `api` é responsável por se conectar às APIs de várias plataformas de Bug Bounty para coletar e baixar os escopos dos programas. Atualmente, ele suporta a plataforma **HackerOne**, com uma estrutura preparada para a expansão futura para outras plataformas como Bugcrowd, Intigriti e YesWeHack.
 
----
+### `cmd`
 
-## 2. DB\_Config.sh
+O diretório `cmd` contém os pontos de entrada da aplicação.
 
-Este script configura a espinha dorsal de persistência do projeto, o banco de dados.
+*   **`show_time`**: É a interface de linha de comando (CLI) e o ponto de entrada para o usuário do sistema AutoHunting. Ele atua como o "controlador" ou "rosto" do projeto, responsável por apresentar menus, coletar as escolhas do usuário e traduzir essas escolhas em ordens claras para o `Maestro`.
+*   **`maestro`**: É o cérebro e o executor central do sistema AutoHunting. Ele é projetado para operar sem interação direta do usuário, funcionando como um serviço de backend que recebe ordens, executa tarefas complexas e registra seu progresso de forma detalhada.
 
-1.  **Seleção do SGBD:** Exibe um menu para que o usuário escolha o tipo de banco de dados desejado (MariaDB, PostgreSQL, MongoDB, etc.).
-2.  **Instalação e Configuração:**
-    * Instala o SGBD selecionado utilizando o gerenciador de pacotes detectado pelo `Install.sh`.
-    * Configura o banco de dados, cria um **usuário e senha dedicados** para uso exclusivo do *framework* de automação.
-3.  **Configuração de Serviços:**
-    * Pergunta se o usuário deseja criar um serviço no sistema operacional (Systemd) para garantir que o banco de dados inicie **automaticamente** junto com o OS.
-4.  **Compatibilidade e Retenção:**
-    * **Metasploit:** Oferece a configuração de um banco de dados de compatibilidade para o Metasploit, se aplicável, integrando-o ao ecossistema.
-    * **Política de Retenção:** Permite ao usuário definir uma política de retenção para os arquivos `.txt` brutos e *logs*, gerenciando o espaço em disco.
+### `config`
 
----
+Este diretório contém as configurações essenciais para o projeto AutoHunting.
 
-## 3. Request\_API.go
+*   **`json`**: Contém os arquivos de configuração JSON que definem parâmetros para a pipeline de coleta, varredura, limpeza e armazenamento de dados de bug bounty.
+*   **`db_config.sh`**: Um script Bash para instalação, configuração e gerenciamento de bancos de dados (PostgreSQL, MariaDB, MySQL, MongoDB) com integração ao Metasploit, criação de usuários, política de retenção de dados e configuração de cron jobs.
 
-Este é o módulo de coleta de dados de alto nível.
+### `data`
 
-1.  **Autenticação:** Lê as credenciais e *tokens* de autenticação do arquivo `tokens.json`.
-2.  **Consultas:** Executa consultas simultâneas contra as APIs de várias plataformas de Bug Bounty.
-3.  **Classificação de Dados:**
-    * **JSON Estruturado:** Para plataformas que fornecem escopo limpo, armazena os resultados diretamente para o `Process_results.go`.
-    * **Texto Bruto:** Para políticas longas que apontam para URLs ou descrevem regras em texto puro, armazena o texto para o `AI_scope_interpreter.go`.
+O diretório `data` contém os módulos que lidam com o processamento de dados.
 
----
+*   **`cleaner`**: O `cleaner.go` é o componente de inteligência léxica do AutoHunting. Sua principal responsabilidade é transformar os resultados brutos e não estruturados, gerados por ferramentas de varredura como Nmap e Nuclei, em dados limpos, formatados e prontos para serem inseridos no banco de dados.
+*   **`db`**: O `db_manager.go` é a camada de persistência de dados do `AutoHunting`. Sua principal responsabilidade é gerenciar a conexão com o banco de dados e inserir os resultados limpos e processados, que foram gerados pelas etapas anteriores do pipeline.
+*   **`results`**: O `process_results.go` atua como o módulo centralizador e validador dos dados de escopo coletados. Sua principal responsabilidade é unificar os alvos provenientes de diferentes fontes, como as APIs de plataformas de Bug Bounty (`Request_API.go`) e, futuramente, os resultados interpretados por IA (`AI_scope_interpreter.go`).
+*   **`runner`**: O `runner` é o "motor" ou os "braços" do sistema AutoHunting. Sua única e crucial responsabilidade é executar ferramentas de segurança externas (como Nmap, Ffuf, etc.) de forma controlada e concorrente.
 
-## 5. Process\_results.go
+### `utils`
 
-Este módulo atua como o unificador e validador final dos dados de escopo.
+O pacote `utils` agrupa funções auxiliares e genéricas que são utilizadas por múltiplos módulos ao longo do projeto `AutoHunting`. O arquivo `json_loader.go` é um componente central deste pacote, fornecendo uma maneira padronizada e robusta de carregar e decodificar arquivos de configuração no formato JSON.
 
-1.  **Unificação:** Consolida os arrays JSON de escopo vindos do `Request_API.go` dados estruturados e do `AI_scope_interpreter.go` vetores de IA.
-2.  **Validação:** Executa checagens finais de integridade e remove duplicatas.
-3.  **Preparação:** Formata os dados no esquema exato da tabela **h1\_structured\_scopes** e os envia ao `DB_manager.go`.
+## Arquivos de Configuração
 
----
+O comportamento do AutoHunting é controlado por um conjunto de arquivos JSON no diretório `config/json`:
 
-## 6. DB\_manager.go
+*   **`env.json`:** Contém as principais configurações de ambiente, como caminhos de arquivo para logs, resultados e outros dados.
+*   **`commands.json`:** Define os modelos de linha de comando para os scanners de segurança. Isso permite que você personalize facilmente os comandos que são executados pelo `runner`.
+*   **`tokens.json`:** Armazena os tokens de API para as plataformas de bug bounty.
+*   **`order-templates.json`:** Contém modelos para as ordens de execução que o `maestro` segue. Isso permite que você defina diferentes fluxos de trabalho para diferentes tarefas.
+*   **`cleaner-templates.json`:** Define os modelos para o módulo `cleaner`, incluindo as expressões regulares e os campos a serem extraídos para cada ferramenta.
+*   **`db_info.json`:** Contém os detalhes de conexão para o banco de dados.
 
-Este módulo centraliza todas as operações de banco de dados.
+## Configuração do Banco de Dados
 
-1.  **Conexão e Comando:** Armazena comandos SQL específicos para cada SGBD suportado e gerencia a conexão com o banco de dados.
-2.  **Criação de Estrutura:** Garante que as tabelas necessárias **active\_programs**, **selected\_scopes**, **tool\_execution\_results** e **vulnerability\_findings** existam.
-3.  **Persistência de Escopo:** Insere os novos programas e escopos ativos na tabela **h1\_structured\_scopes** e **active\_programs**.
-4.  **Persistência de Resultados:** Recebe e insere os achados limpos do `cleaner.go` na tabela **vulnerability\_findings**.
+O script `db_config.sh` é usado para instalar, configurar e gerenciar os bancos de dados suportados. Ele oferece um menu interativo para facilitar a administração de sistemas de bancos de dados em ambientes Linux.
 
----
+## Começando
 
-## 7. Show\_Time.go
+1.  **Instale as Dependências:** Execute o script `install.sh` para instalar as ferramentas e dependências necessárias.
+2.  **Configure o Ambiente:** Execute os scripts `config_enviroment.sh` e `db_config.sh` para configurar os caminhos dos arquivos e a conexão com o banco de dados.
+3.  **Adicione Tokens de API:** Preencha seus tokens de API no arquivo `config/json/tokens.json`.
+4.  **Execute a Aplicação:** Execute o binário `show_time` para iniciar a CLI interativa.
 
-Este é o módulo de análise e priorização, a voz do analista.
-
-1.  **Consumo de Dados:** Consulta as tabelas **h1\_structured\_scopes** e **tool\_execution\_results** para obter o estado atual de todos os alvos.
-2.  **Análise e Priorização:** Usa variáveis de ambiente e a inteligência dos vetores detectados pela IA para priorizar alvos. Decide **O QUE** deve ser testado.
-3.  **Geração de Saída:**
-    * **Relatório Resumido:** Cria um *dashboard* com métricas de alto nível.
-    * **Mapa de Alvos:** Gera uma visualização ou lista priorizada para **validação manual** e foco do *hunter*.
-    * **Fila de Execução:** Envia a lista de tarefas priorizadas para o `maestro.go`.
-
----
-
-## 8. maestro.go
-
-Este é o orquestrador do processo de execução.
-
-1.  **Orquestração:** Recebe a **Fila de Execução** do `Show_Time.go`.
-2.  **Definição de Comandos:** Lê o `commands.json` para obter os comandos CLI exatos para cada ferramenta e alvo.
-3.  **Instrução ao Runner:** Define a ordem e os comandos para cada teste e os envia ao `runner.go`.
-4.  **Relatório de Estado:** Cria um *log* de alto nível de todas as tarefas que o sistema tentou executar.
-
----
-
-## 9. runner.go
-
-Este é o motor de execução pura, garantindo a confiabilidade dos testes.
-
-1.  **Execução:** Recebe as instruções do `maestro.go` e executa a ferramenta de *scan* Ex: `nmap -p- -sV {alvo}`.
-2.  **Análise de Checkpoint:** Antes de rodar, consulta o banco de dados para verificar se o teste já foi realizado recentemente.
-3.  **Rastreabilidade:**
-    * **Armazenamento Bruto:** Armazena a saída da ferramenta (texto bruto) em uma pasta temporária para processamento.
-    * **Checkpoint DB:** Imediatamente após a execução, atualiza o banco de dados **tool\_execution\_results** com o *status* da execução `SUCCESS` ou `FAILURE`.
-
----
-
-## 10. cleaner.go
-
-Este módulo é o processador de resultados e a **inteligência léxica**.
-
-1.  **Processamento Bruto:** Lê os arquivos de *log* da pasta temporária.
-2.  **Análise Léxica Avançada:** Utiliza dicionários e palavras-chave para extrair dados estruturados de *outputs* não estruturados:
-    * **Nmap:** Detecta e separa portas abertas, portas filtradas, e serviços.
-    * **Detecção de Vetores:** Mapeia achados de ferramentas de baixa severidade para **vetores de vulnerabilidade** de alto nível.
-3.  **Persistência:** Formata os achados em JSON limpo e envia os comandos de `INSERT` para o **DB\_manager.go** para que sejam inseridos na tabela **vulnerability\_findings**.
-4.  **Limpeza de Log:** Processa o *log* de estado do `maestro.go` para criar um relatório de execução limpo.
-
----
-
-## Exemplo de Uso
 ```bash
-$ sudo ./install.sh
-=== Installer ===
-Escolha categorias (múltiplas separadas por vírgula):
- 1) Todas
- 2) Base
- 3) Recon
- 4) Scanners
- 5) Web
- 6) Aux
- 7) Misc
- 8) Mostrar módulos
- 9) Verificar instalação
- 0) Sair
-Opção(s): 3
-[2025-09-30 23:18:00] SUCCESS: Gerenciador de pacotes detectado: pacman
-[2025-09-30 23:18:01] INFO: [1/10] Instalando: subfinder
-[2025-09-30 23:18:02] INFO: [4/10] Instalando: katana
-...
-=== Resumo das instalações ===
-Tools installed by pacman:
-  curl
-Tools installed by git clone:
-  katana
-    URL = https://github.com/projectdiscovery/katana
-    Dir = /opt/autohunting/katana
-Instalação concluída!
+go run cmd/show_time.go
 ```
 
-## Depuração
-- **Verificar Logs**: Consulte `/var/log/autohunting_install.log` para erros.
-- **Debugging**:
-  ```bash
-  bash -x ./install.sh
-  ```
-- **Testar Ferramentas**: Após a instalação, verifique ferramentas Git:
-  ```bash
-  ls -l /opt/autohunting
-  ```
+## Melhorias Futuras
 
-## Notas
-- **Paralelismo**: O script usa até 4 processos simultâneos. Reduza `MAX_JOBS` em sistemas com poucos recursos.
-- **Git**: Ferramentas como `katana` e `reconftw` são clonadas para `/opt/autohunting` ou um diretório especificado.
-- **Permissões**: O comando `chmod 600` garante que apenas o proprietário (root) acesse os scripts.
-- **Erros**: Falhas de instalação (e.g., GitHub inacessível) são registradas no log.
-
-## Limitações
-- Algumas ferramentas (e.g., `reconftw`, `metasploit`) podem exigir configuração manual após clonagem.
-- Requer conexão com a internet para Git e downloads de pacotes.
-- A verificação de instalação (`is_installed`) pode falhar para ferramentas sem binários padrão.
+*   **Paralelismo:** Várias partes do código, como as etapas `RequestAPI` e `CleanResults`, podem ser paralelizadas para melhorar o desempenho.
+*   **Abstração de SQL:** As consultas SQL no `db_manager` podem ser abstraídas para suportar diferentes sistemas de banco de dados.
+*   **Interpretação de Escopo Baseada em IA:** Um módulo de IA pode ser adicionado para interpretar o escopo de um programa a partir de descrições em linguagem natural.
+*   **Painel Web:** Um painel baseado na web pode ser criado para visualizar os resultados e gerenciar a aplicação.

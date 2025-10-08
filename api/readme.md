@@ -66,3 +66,5 @@ INÍCIO DA COLETA DE ESCOPO
     -> O arquivo de texto gerado se torna a entrada para o módulo `results` (`process_results.go`), que irá normalizar, limpar e unificar estes dados.
 
 FIM DA COLETA DE ESCOPO
+```
+

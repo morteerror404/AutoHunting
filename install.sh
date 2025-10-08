@@ -14,7 +14,7 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-ENV_JSON_PATH="config/json/env.json" # Adicionado para a nova função
+ENV_JSON_PATH="config/json/env.json"
 LOG_FILE="/var/log/autohunting_install.log"
 DELAY_MS=300
 DRY_RUN=${DRY_RUN:-0}
@@ -203,6 +203,7 @@ pkg_binary_candidates() {
 # =============================
 is_installed() {
     local pkg="$1"
+    # Primeiro, verifica se o comando já existe no PATH
     local candidates
     candidates="$(pkg_binary_candidates "$pkg")"
     log_message "DEBUG" "Verificando instalação de $pkg com candidatos: $candidates"
@@ -215,6 +216,7 @@ is_installed() {
         done
     fi
 
+    # Tenta variações do nome
     local lower="${pkg,,}"
     for c in "$pkg" "${lower}" "${pkg//_/-}" "${pkg//-/_}"; do
         if command -v "$c" >/dev/null 2>&1; then
@@ -223,6 +225,7 @@ is_installed() {
         fi
     done
 
+    # Por último, verifica com o gerenciador de pacotes
     case "${CMD_PACK_MANAGER_NAME-}" in
         apt) dpkg -s "$pkg" >/dev/null 2>&1 && { log_message "DEBUG" "$pkg: Encontrado via dpkg"; return 0; } ;;
         pacman) pacman -Qi "$pkg" >/dev/null 2>&1 && { log_message "DEBUG" "$pkg: Encontrado via pacman"; return 0; } ;;
@@ -237,79 +240,75 @@ is_installed() {
 # =============================
 install_one() {
     local pkg="$1"
-    log_message "DEBUG" "Tentando instalar: $pkg"
+    log_message "INFO" "Processando instalação para: $pkg"
 
     if is_installed "$pkg"; then
         log_message "INFO" "Pulando (já instalado): $pkg"
         TOOLS_PM_INSTALLED+=("$pkg")
         return 0
     fi
+    
+    # --- NOVA LÓGICA DE INSTALAÇÃO ---
 
-    local special
-    special="$(get_install_cmd "$pkg" 2>>"$LOG_FILE" || true)"
-    log_message "DEBUG" "Método especial para $pkg: $special"
-
-    if [[ -n "$special" ]]; then
-        if [[ "$special" == GO111MODULE* ]] && [[ -z "$GOINSTALL_BIN" ]]; then
-            log_message "WARN" "Go não encontrado; instalando $pkg via package manager..."
-            special=""
-        fi
-    fi
-
-    if [[ -n "$special" ]]; then
-        log_message "INFO" "Executando método especial: $special"
-        if [ "${DRY_RUN:-0}" -eq 1 ]; then
-            log_message "DRY" "(simulação) $special"
-        else
-            if eval "$special" 2>>"$LOG_FILE"; then
-                log_message "SUCCESS" "Instalado via método especial: $pkg"
-                TOOLS_PM_INSTALLED+=("$pkg")
-                return 0
-            else
-                log_message "WARN" "Falhou método especial: $pkg"
-            fi
-        fi
-    fi
-
+    # 1. Tenta pelo Gerenciador de Pacotes
+    log_message "DEBUG" "Tentativa 1: Instalando '$pkg' via Gerenciador de Pacotes ($CMD_PACK_MANAGER_NAME)..."
     if _exec_install "$pkg"; then
         TOOLS_PM_INSTALLED+=("$pkg")
         return 0
     fi
+    log_message "WARN" "Falha ao instalar '$pkg' via Gerenciador de Pacotes."
 
+    # 2. Tenta pelo Git
     local git_url="${GIT_REPOS[$pkg]:-}"
-    log_message "DEBUG" "Tentando Git para $pkg: $git_url"
-    if [[ -z "$git_url" ]]; then
-        log_message "WARN" "Nenhum GitHub configurado para $pkg"
-        return 1
-    fi
-
-    if ping -c1 -W2 "$(echo "$git_url" | awk -F/ '{print $3}')" >/dev/null 2>&1; then
-        if [[ -z "$GIT_INSTALL_DIR" || "$GIT_INSTALL_DIR" == "False" ]]; then
-            log_message "INFO" "Prompt para diretório Git (enter = pwd, n/no = pwd)"
-            read -rp "Diretório Git: " user_dir
-            [[ -z "$user_dir" || "$user_dir" =~ ^(n|no)$ ]] && GIT_INSTALL_DIR="$(pwd)" || GIT_INSTALL_DIR="$user_dir"
-        fi
-
+    if [[ -n "$git_url" ]]; then
+        log_message "DEBUG" "Tentativa 2: Instalando '$pkg' via Git clone..."
         local install_dir="$GIT_INSTALL_DIR/$pkg"
-        log_message "DEBUG" "Clonando $pkg para $install_dir"
-        mkdir -p "$install_dir"
+        [[ -z "$GIT_INSTALL_DIR" ]] && install_dir="$TOOLS_PREFIX/$pkg"
+        
         if [ "${DRY_RUN:-0}" -eq 1 ]; then
             log_message "DRY" "(simulação) git clone $git_url $install_dir"
         else
+            mkdir -p "$(dirname "$install_dir")"
             if git clone "$git_url" "$install_dir" 2>>"$LOG_FILE"; then
                 TOOLS_GIT_INSTALLED+=("$pkg")
                 echo "URL = $git_url" > "$install_dir/install_info.txt"
                 echo "Dir = $install_dir" >> "$install_dir/install_info.txt"
                 log_message "SUCCESS" "Instalado via Git: $pkg"
+                return 0
             else
-                log_message "ERROR" "Falha ao clonar $pkg"
-                return 1
+                log_message "WARN" "Falha ao clonar '$pkg' via Git."
             fi
         fi
     else
-        log_message "ERROR" "Não foi possível conectar ao GitHub para $pkg"
-        return 1
+        log_message "DEBUG" "Nenhum repositório Git configurado para '$pkg'."
     fi
+
+    # 3. Tenta pelo Go
+    local go_cmd
+    go_cmd=$(get_install_cmd "$pkg" | grep 'GO111MODULE')
+    if [[ -n "$go_cmd" ]]; then
+        log_message "DEBUG" "Tentativa 3: Instalando '$pkg' via Go..."
+        if [ "${DRY_RUN:-0}" -eq 1 ]; then log_message "DRY" "(simulação) $go_cmd"; else
+            if eval "$go_cmd" 2>>"$LOG_FILE"; then
+                log_message "SUCCESS" "Instalado via Go: $pkg"; TOOLS_PM_INSTALLED+=("$pkg"); return 0;
+            else log_message "WARN" "Falha ao instalar '$pkg' via Go."; fi
+        fi
+    fi
+
+    # 4. Tenta pelo Pip
+    local pip_cmd
+    pip_cmd=$(get_install_cmd "$pkg" | grep 'pip3')
+    if [[ -n "$pip_cmd" ]]; then
+        log_message "DEBUG" "Tentativa 4: Instalando '$pkg' via Pip..."
+        if [ "${DRY_RUN:-0}" -eq 1 ]; then log_message "DRY" "(simulação) $pip_cmd"; else
+            if eval "$pip_cmd" 2>>"$LOG_FILE"; then
+                log_message "SUCCESS" "Instalado via Pip: $pkg"; TOOLS_PM_INSTALLED+=("$pkg"); return 0;
+            else log_message "WARN" "Falha ao instalar '$pkg' via Pip."; fi
+        fi
+    fi
+
+    log_message "ERROR" "NÃO FOI POSSÍVEL INSTALAR '$pkg'. Todos os métodos falharam."
+    return 1
 }
 
 # =============================
@@ -321,7 +320,7 @@ install_array() {
     local jobs=0
     for pkg in "${arr[@]}"; do
         idx=$((idx+1))
-        log_message "INFO" "[$idx/$total] Instalando: $pkg"
+        log_message "INFO" "[$idx/$total] Processando: $pkg"
         install_one "$pkg" &
         jobs=$((jobs+1))
         if [ "$jobs" -ge "$MAX_JOBS" ]; then
@@ -389,6 +388,33 @@ EOF
 # =============================
 show_install_summary() {
     echo -e "\n${BOLD}${CYAN}=== Resumo das instalações ===${NC}"
+    if [ ${#TOOLS_PM_INSTALLED[@]} -gt 0 ]; then
+        echo -e "${BOLD}Ferramentas instaladas (PM/Go/Pip):${NC}"
+        for t in "${TOOLS_PM_INSTALLED[@]}"; do echo "  $t"; done
+    fi
+    if [ ${#TOOLS_GIT_INSTALLED[@]} -gt 0 ]; then
+        echo -e "${BOLD}Ferramentas instaladas (Git Clone):${NC}"
+        for t in "${TOOLS_GIT_INSTALLED[@]}"; do
+            local info_dir="$GIT_INSTALL_DIR/$t/install_info.txt"
+            [[ -z "$GIT_INSTALL_DIR" ]] && info_dir="$TOOLS_PREFIX/$t/install_info.txt"
+            echo "  $t"
+            [[ -f "$info_dir" ]] && cat "$info_dir" | sed 's/^/    /'
+        done
+    fi
+}
+
+# =================================
+# Funções de Configuração de Ambiente
+# =================================
+
+verificar_e_criar_diretorios_base() {
+    log_message "INFO" "Verificando e criando diretórios base definidos em '$ENV_JSON_PATH'..."
+    if ! command -v jq &> /dev/null; then
+        log_message "ERROR" "A ferramenta 'jq' é necessária para ler as configurações, mas não foi encontrada."
+        return 1
+    fi
+show_install_summary() {
+    echo -e "\n${BOLD}${CYAN}=== Resumo das instalações ===${NC}"
     echo -e "${BOLD}Tools installed by $CMD_PACK_MANAGER_NAME:${NC}"
     for t in "${TOOLS_PM_INSTALLED[@]}"; do echo "  $t"; done
     echo -e "${BOLD}Tools installed by git clone:${NC}"
@@ -399,19 +425,8 @@ show_install_summary() {
     done
 }
 
-# =================================
-# Funções de Configuração de Ambiente (Movidas de config_enviroment.sh)
-# =================================
-
-verificar_e_criar_diretorios_base() {
-    echo -e "\n[+] Verificando e criando diretórios base definidos em '$ENV_JSON_PATH'..."
-    if ! command -v jq &> /dev/null; then
-        log_message "ERROR" "A ferramenta 'jq' é necessária, mas não foi encontrada."
-        return 1
-    fi
-
     if [ ! -f "$ENV_JSON_PATH" ]; then
-        log_message "ERROR" "Arquivo de configuração '$ENV_JSON_PATH' não encontrado."
+        log_message "ERROR" "Arquivo de configuração '$ENV_JSON_PATH' não encontrado. Não é possível criar os diretórios."
         return 1
     fi
 
@@ -453,6 +468,13 @@ verificar_e_criar_templates_cleaner() {
     done
 
     log_message "SUCCESS" "Verificação de templates do Cleaner concluída."
+}
+
+setup_environment() {
+    log_message "INFO" "Iniciando configuração do ambiente..."
+    verificar_e_criar_diretorios_base
+    verificar_e_criar_templates_cleaner
+    log_message "INFO" "Configuração do ambiente finalizada."
 }
 
 # =============================
@@ -501,6 +523,10 @@ print_menu() {
 main() {
     verifica_basico
     configurar_log
+    
+    # Etapa de configuração do ambiente
+    setup_environment
+
     detect_package_manager
 
     while true; do
@@ -541,10 +567,10 @@ main() {
                     ;;
             esac
         done
+        
+        show_install_summary
+        echo -e "\n${BOLD}${GREEN}Instalação concluída! Próximo passo: execute o ./config/db_config.sh para configurar o banco de dados.${NC}"
+        exit 0
     done
-
-    # Após a instalação, executa as tarefas de configuração de ambiente
-    verificar_e_criar_diretorios_base
-    verificar_e_criar_templates_cleaner
 }
 main

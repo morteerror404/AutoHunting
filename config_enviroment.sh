@@ -45,7 +45,7 @@ verifica_root() {
 show_menu_principal() {
     echo -e "\n=== Ferramenta de Configuração de Ambiente ==="
     echo -e "-----------------------------------------------\n"
-    echo " 1) Utilizar configuração padrão"
+    echo " 1) Verificar/Recriar diretórios base (executado no install.sh)"
     echo " 2) Mostrar configuração atual"
     echo " 3) Configurar serviço de inicialização automática"
     echo " 4) Configurar diretório para arquivos JSON"
@@ -132,6 +132,38 @@ show_menu_logs() {
 # ===============================
 # Funções de Lógica
 # ===============================
+
+verificar_e_criar_diretorios_base() {
+    log "INFO" "Verificando e criando diretórios base definidos em '$ENV_JSON_PATH'..."
+    if ! command -v jq &> /dev/null; then
+        log "ERROR" "A ferramenta 'jq' é necessária para ler as configurações, mas não foi encontrada."
+        return 1
+    fi
+
+    if [ ! -f "$ENV_JSON_PATH" ]; then
+        log "ERROR" "Arquivo de configuração '$ENV_JSON_PATH' não encontrado. Não é possível criar os diretórios."
+        return 1
+    fi
+
+    # Itera sobre todos os valores dentro do objeto 'path'
+    jq -r '.path | to_entries[] | .value' "$ENV_JSON_PATH" | while IFS= read -r dir_path; do
+        if [ -z "$dir_path" ] || [ "$dir_path" == "null" ]; then continue; fi
+        
+        # Garante que o caminho seja absoluto ou relativo à raiz do projeto
+        # Esta é uma simplificação; para robustez, caminhos absolutos são melhores.
+        
+        if [ -d "$dir_path" ]; then
+            log "INFO" "Diretório '$dir_path' já existe."
+        else
+            log "INFO" "Criando diretório '$dir_path'..."
+            if mkdir -p "$dir_path"; then
+                log "SUCCESS" "Diretório '$dir_path' criado com sucesso."
+            else
+                log "ERROR" "Falha ao criar o diretório '$dir_path'."
+            fi
+        fi
+    done
+}
 
 check_and_set_wordlist_dir() {
     if ! command -v jq &> /dev/null; then
@@ -532,8 +564,8 @@ while true; do
 
     case $opcao in
         1)
-            echo -e "\n${YELLOW}Esta função foi movida para o script 'install.sh' para ser executada após a instalação.${NC}"
-            echo "O 'install.sh' agora garante que todos os diretórios base sejam criados."
+            echo -e "\n[*] Verificando e recriando diretórios base..."
+            verificar_e_criar_diretorios_base
             ;;
         2)
             echo -e "\n[*] Mostrando configuração atual...\n"
