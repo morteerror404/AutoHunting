@@ -204,9 +204,19 @@ rows, err := db.Query(query, platform)
 		fmt.Printf("Total scopes found: %d\n", count)
 	}
 
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("error iterating results: %w", err)
-	}
+	return nil
+}
 
+// DataBaseStore is a placeholder for storing data in the database.
+func DataBaseStore(destiny string) error {
+	fmt.Printf("Function 'DataBaseStore' called with destiny: %s\n", destiny)
+	// TODO: Implement logic, possibly calling ProcessCleanFile.
+	return nil
+}
+
+// GetInfoFromDB is a placeholder for retrieving information from the database.
+func GetInfoFromDB(destiny string) error {
+	fmt.Printf("Function 'GetInfoFromDB' called with destiny: %s\n", destiny)
+	// TODO: Implement logic, possibly calling ShowScopes or other queries.
 	return nil
 }

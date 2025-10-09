@@ -362,3 +362,17 @@ func tailLogFile(ctx context.Context, filepath string) {
 
 	<-ctx.Done() // Waits for the cancellation signal
 }
+
+// ShowOptions is a placeholder for showing options to the user.
+func ShowOptions(destiny string) error {
+	fmt.Printf("Function 'ShowOptions' called with destiny: %s\n", destiny)
+	// TODO: Implement logic to display menu options.
+	return nil
+}
+
+// ShowExecutionPlan is a placeholder for showing the execution plan.
+func ShowExecutionPlan(destiny string) error {
+	fmt.Printf("Function 'ShowExecutionPlan' called with destiny: %s\n", destiny)
+	// TODO: Implement logic to display the steps from a maestro order.
+	return nil
+}
