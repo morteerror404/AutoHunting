@@ -106,6 +106,12 @@ Cada uma dessas funções recebe o `*MaestroContext` e é responsável por uma e
 
 ### Funções de Suporte
 
+-   **`stepCheckScopeStatus(ctx *MaestroContext) error`**:
+    -   Verifica o status de processamento de um escopo específico, lendo o campo `Data` da ordem de execução.
+    -   Procura por arquivos de resultado nos diretórios de resultados brutos (`tool_dirt_dir`) e limpos (`tool_cleaned_dir`) que correspondam ao escopo.
+    -   Loga os arquivos encontrados, indicando quais etapas do pipeline (runner, cleaner) já foram executadas para aquele alvo.
+### Funções de Suporte
+
 -   **`setupLogging(ctx *MaestroContext) error`**:
     -   Lê `env.json` para encontrar o `log_dir`.
     -   Cria o diretório de log, se não existir.

@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/hpcloud/tail" //  robust tail library
-	"github.com/morteerror404/AutoHunting/data/db"
 	"github.com/morteerror404/AutoHunting/utils"
 )
 
@@ -46,13 +45,8 @@ func showMainMenu() {
 	fmt.Println("2) Query Database")
 	fmt.Println("3) Check API Status")
 	fmt.Println("0) Exit")
-	fmt.Print("Choose an option: ")
 
-	reader := bufio.NewReader(os.Stdin)
-	input, _ := reader.ReadString('\n')
-	choice := strings.TrimSpace(input)
-
-	switch choice {
+	switch getUserInput("Choose an option: ") {
 	case "1":
 		handleHuntMenu()
 	case "2":
@@ -67,7 +61,7 @@ func showMainMenu() {
 	}
 }
 
-// Load tokens
+// handleHuntMenu gerencia a lógica para iniciar uma "caçada completa".
 func handleHuntMenu() {
 	tokens, err := loadTokens()
 	if err != nil {
@@ -93,18 +87,14 @@ func handleHuntMenu() {
 	triggerMaestro()
 }
 
+// handleDBMenu exibe o submenu de operações do banco de dados.
 func handleDBMenu() {
-	// Logic for the database menu
 	fmt.Println("\n--- Database Menu ---")
 	fmt.Println("1) List scopes for a platform")
 	fmt.Println("2) Insert scope manually")
 	fmt.Println("0) Back")
-	fmt.Print("Choose: ")
-	reader := bufio.NewReader(os.Stdin)
-	input, _ := reader.ReadString('\n')
-	choice := strings.TrimSpace(input)
 
-	switch choice {
+	switch getUserInput("Choose: ") {
 	case "1":
 		{
 			tokens, err := loadTokens()
@@ -138,6 +128,7 @@ func handleDBMenu() {
 	}
 }
 
+// handleAPIStatusMenu gerencia a verificação de status das APIs das plataformas.
 func handleAPIStatusMenu() {
 	tokens, err := loadTokens()
 	if err != nil {
@@ -157,6 +148,60 @@ func handleAPIStatusMenu() {
 			fmt.Printf("API for platform '%s' seems to be responding correctly.\n", platform)
 		}
 	}
+}
+
+// handleListScopes gerencia a tarefa de listar escopos de uma plataforma.
+func handleListScopes() {
+	tokens, err := loadTokens()
+	if err != nil {
+		fmt.Printf("Error loading tokens: %v\n", err)
+		return
+	}
+	platform, err := selectPlatform(tokens)
+	if err != nil {
+		fmt.Printf("Error selecting platform: %v\n", err)
+		return
+	}
+	if platform != "" {
+		if err := utils.CreateExecutionOrder("listScopes", platform, nil); err != nil {
+			fmt.Printf("Error creating list order: %v\n", err)
+		} else {
+			fmt.Println("\nList order created. Triggering maestro...")
+			triggerMaestro()
+		}
+	}
+}
+
+// handleManualScopeInsertion gerencia a inserção manual de um escopo.
+func handleManualScopeInsertion() error {
+	fmt.Println("\n--- Insert Scope Manually ---")
+
+	tokens, err := loadTokens()
+	if err != nil {
+		return fmt.Errorf("error loading tokens: %w", err)
+	}
+	platform, err := selectPlatform(tokens)
+	if err != nil {
+		return fmt.Errorf("error selecting platform: %w", err)
+	}
+	if platform == "" {
+		fmt.Println("Operation cancelled.")
+		return nil
+	}
+
+	scope := getUserInput(fmt.Sprintf("Enter the scope for platform '%s' (e.g., example.com): ", platform))
+	if scope == "" {
+		return fmt.Errorf("scope cannot be empty")
+	}
+
+	orderData := map[string]string{"scope": scope}
+	if err := utils.CreateExecutionOrder("insertScope", platform, orderData); err != nil {
+		return fmt.Errorf("error creating insertion order: %w", err)
+	}
+
+	fmt.Println("\nInsertion order created. Triggering maestro...")
+	triggerMaestro()
+	return nil
 }
 
 // loadTokens loads the tokens.json file
@@ -194,14 +239,8 @@ func selectPlatform(tokens Tokens) (string, error) {
 		fmt.Printf("%d) %s\n", i+1, p)
 	}
 	fmt.Println("0) Cancel")
-	fmt.Print("Choose an option: ")
 
-	reader := bufio.NewReader(os.Stdin)
-	input, err := reader.ReadString('\n')
-	if err != nil {
-		return "", fmt.Errorf("error reading input: %w", err)
-	}
-	input = strings.TrimSpace(input)
+	input := getUserInput("Choose an option: ")
 
 	choice, err := strconv.Atoi(input)
 	if err != nil || choice < 0 || choice > len(platforms) {
@@ -213,103 +252,43 @@ func selectPlatform(tokens Tokens) (string, error) {
 	return platforms[choice-1], nil
 }
 
-// checkAPIStatus tests the connection to a platform's API
-func checkAPIStatus(platform string) error {
-	// TODO: Refactor this function to avoid code repetition.
-	// The logic of making a GET and checking the status code is the same for all platforms.
-	// Create a helper function `testEndpoint(platformName, url)` that receives the URL and platform name, and then call that function inside the switch.
-	sswitch platform {
-	case "hackerone":
-		fmt.Println("Testing connection to HackerOne API...")
-		url := "https://api.hackerone.com/reports" // Use a public and lightweight endpoint
-		resp, err := http.Get(url)
-		if err != nil {
-			return fmt.Errorf("error connecting to HackerOne API: %w", err)
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("HackerOne API returned status code: %d", resp.StatusCode)
-		}
-		return nil
-	case "bugcrowd":
-		fmt.Println("Testing connection to Bugcrowd API...")
-		url := "https://api.bugcrowd.com/programs" // Public endpoint
-		resp, err := http.Get(url)
-		if err != nil {
-			return fmt.Errorf("error connecting to Bugcrowd API: %w", err)
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("Bugcrowd API returned status code: %d", resp.StatusCode)
-		}
-		return nil
-
-	case "intigriti":
-		fmt.Println("Testing connection to Intigriti API...")
-		url := "https://api.intigriti.com/core/v1/programs" // Public endpoint
-		resp, err := http.Get(url)
-		if err != nil {
-			return fmt.Errorf("error connecting to Intigriti API: %w", err)
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("Intigriti API returned status code: %d", resp.StatusCode)
-		}
-		return nil
-	case "yeswehack":
-		fmt.Println("Testing connection to YesWeHack API...")
-		url := "https://api.yeswehack.com/api/v1/programs"
-		resp, err := http.Get(url)
-		if err != nil {
-			return fmt.Errorf("error connecting to YesWeHack API: %w", err)
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("YesWeHack API returned status code: %d", resp.StatusCode)
-		}
-
-		return nil
-
+// testEndpoint performs a GET request to a URL and checks for a 200 OK status.
+func testEndpoint(platformName, url string) error {
+	fmt.Printf("Testing connection to %s API...\n", platformName)
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("error connecting to %s API: %w", platformName, err)
 	}
-	return fmt.Errorf("platform %s not supported", platform)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("%s API returned status code: %d", platformName, resp.StatusCode)
+	}
+	return nil
 }
 
-// handleManualScopeInsertion manages the manual insertion of a scope into the database.
-func handleManualScopeInsertion() error { // NOW DELEGATES TO THE MAESTRO
-	fmt.Println("\n--- Insert Scope Manually ---")
-
-	// 1. Select the platform
-	tokens, err := loadTokens()
-	if err != nil {
-		return fmt.Errorf("error loading tokens: %w", err)
-	}
-	platform, err := selectPlatform(tokens)
-	if err != nil {
-		return fmt.Errorf("error selecting platform: %w", err)
-	}
-	if platform == "" {
-		fmt.Println("Operation cancelled.")
-		return nil // User cancelled
+// checkAPIStatus testa a conexão com a API de uma plataforma.
+func checkAPIStatus(platform string) error {
+	endpoints := map[string]string{
+		"hackerone": "https://api.hackerone.com/v1/hackers/programs", // Endpoint público e leve
+		"bugcrowd":  "https://api.bugcrowd.com/programs",
+		"intigriti": "https://api.intigriti.com/core/v1/programs",
+		"yeswehack": "https://api.yeswehack.com/api/v1/programs",
 	}
 
-	// 2. Request the scope
-	fmt.Printf("Enter the scope for platform '%s' (e.g., example.com): ", platform)
+	url, ok := endpoints[platform]
+	if !ok {
+		return fmt.Errorf("platform '%s' not supported for API status check", platform)
+	}
+
+	return testEndpoint(platform, url)
+}
+
+// getUserInput exibe um prompt e lê uma linha de entrada do usuário.
+func getUserInput(prompt string) string {
+	fmt.Print(prompt)
 	reader := bufio.NewReader(os.Stdin)
-	scope, _ := reader.ReadString('\n')
-	scope = strings.TrimSpace(scope)
-	if scope == "" {
-		return fmt.Errorf("scope cannot be empty")
-	}
-
-	// 3. Create the order for the 'insertScope' task with the data and trigger the maestro
-	orderData := map[string]string{"scope": scope}
-	if err := utils.CreateExecutionOrder("insertScope", platform, orderData); err != nil {
-		return fmt.Errorf("error creating insertion order: %w", err)
-	}
-
-	fmt.Println("\nInsertion order created. Triggering maestro...")
-	triggerMaestro()
-	return nil
+	input, _ := reader.ReadString('\n')
+	return strings.TrimSpace(input)
 }
 
 // triggerMaestro writes the order and executes the maestro, monitoring the log.

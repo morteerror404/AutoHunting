@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"time"
@@ -83,15 +84,27 @@ func runMaestro() error {
 		case "RequestAPI":
 			stepErr = stepRequestAPI(ctx)
 		case "RunScanners":
+		// New granular steps for detailedHunt
+		case "CheckAPIStatus":
+			stepErr = stepCheckAPIStatus(ctx)
+		case "FetchApiScopes":
+			stepErr = stepFetchApiScopes(ctx)
+		case "RunScanners": // This step can be reused
 			stepErr = stepRunScanners(ctx)
 		case "CleanResults":
 			stepErr = stepCleanResults(ctx)
 		case "StoreResults":
 			stepErr = stepStoreResults(ctx)
+		case "CleanToolResults":
+			stepErr = stepCleanToolResults(ctx)
+		case "StoreCleanedResults":
+			stepErr = stepStoreCleanedResults(ctx)
 		case "insertScope":
 			stepErr = stepInsertScope(ctx)
 		case "listScopes":
 			stepErr = stepListScopes(ctx)
+		case "checkScopeStatus":
+			stepErr = stepCheckScopeStatus(ctx)
 		default:
 			stepErr = fmt.Errorf("unknown step in execution order: %s", step.Step)
 		}
@@ -110,6 +123,35 @@ func runMaestro() error {
 }
 
 func stepRequestAPI(ctx *MaestroContext) error {
+func stepCheckAPIStatus(ctx *MaestroContext) error {
+	platform := ctx.Order.Platform
+	log.Printf("Checking API status for platform: %s", platform)
+
+	endpoints := map[string]string{
+		"hackerone": "https://api.hackerone.com/v1/hackers/programs",
+		"bugcrowd":  "https://api.bugcrowd.com/programs",
+		"intigriti": "https://api.intigriti.com/core/v1/programs",
+		"yeswehack": "https://api.yeswehack.com/api/v1/programs",
+	}
+
+	url, ok := endpoints[platform]
+	if !ok {
+		return fmt.Errorf("platform '%s' not supported for API status check", platform)
+	}
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("error connecting to %s API: %w", platform, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("%s API returned status code: %d", platform, resp.StatusCode)
+	}
+	log.Printf("API for platform '%s' is responsive (Status: %d)", platform, resp.StatusCode)
+	return nil
+}
+
+func stepFetchApiScopes(ctx *MaestroContext) error {
 	apiDirtPath, ok := ctx.Config.Path["api_dirt_results_path"]
 	if !ok {
 		return fmt.Errorf("api_dirt_results_path not found in env.json")
@@ -139,6 +181,7 @@ func stepRunScanners(ctx *MaestroContext) error {
 }
 
 func stepCleanResults(ctx *MaestroContext) error {
+func stepCleanToolResults(ctx *MaestroContext) error {
 	outDir, ok := ctx.Config.Path["tool_dirt_dir"]
 	if !ok {
 		return fmt.Errorf("tool_dirt_dir not found in env.json")
@@ -166,6 +209,7 @@ func stepCleanResults(ctx *MaestroContext) error {
 }
 
 func stepStoreResults(ctx *MaestroContext) error {
+func stepStoreCleanedResults(ctx *MaestroContext) error {
 	dbConn, err := db.ConnectDB()
 	if err != nil {
 		return fmt.Errorf("error connecting to DB: %w", err)
@@ -225,6 +269,57 @@ func stepListScopes(ctx *MaestroContext) error {
 	defer dbConn.Close()
 
 	return db.ShowScopes(platform, dbConn)
+}
+
+func stepCheckScopeStatus(ctx *MaestroContext) error {
+	scope, ok := ctx.Order.Data["scope"]
+	if !ok || scope == "" {
+		return fmt.Errorf("data 'scope' not found or empty in execution order for task 'checkScopeStatus'")
+	}
+
+	log.Printf("Checking execution status for scope: %s", scope)
+
+	// Sanitize scope to be used in filenames
+	sanitizedScope := strings.ReplaceAll(scope, "://", "_")
+	sanitizedScope = strings.ReplaceAll(sanitizedScope, "/", "_")
+
+	// 1. Check for raw result files (from runner)
+	dirtDir, ok := ctx.Config.Path["tool_dirt_dir"]
+	if !ok {
+		return fmt.Errorf("tool_dirt_dir not found in env.json")
+	}
+	dirtFiles, err := filepath.Glob(filepath.Join(dirtDir, "*"+sanitizedScope+"*"))
+	if err != nil {
+		log.Printf("Warning: could not check dirt directory: %v", err)
+	}
+	if len(dirtFiles) > 0 {
+		log.Printf("  [RUNNER STATUS] Found %d raw result file(s) for '%s'. Scans have likely run.", len(dirtFiles), scope)
+		for _, f := range dirtFiles {
+			log.Printf("    - %s", filepath.Base(f))
+		}
+	} else {
+		log.Printf("  [RUNNER STATUS] No raw result files found for '%s'.", scope)
+	}
+
+	// 2. Check for cleaned result files (from cleaner)
+	cleanDir, ok := ctx.Config.Path["tool_cleaned_dir"]
+	if !ok {
+		return fmt.Errorf("tool_cleaned_dir not found in env.json")
+	}
+	cleanFiles, err := filepath.Glob(filepath.Join(cleanDir, "*"+sanitizedScope+"*"))
+	if err != nil {
+		log.Printf("Warning: could not check clean directory: %v", err)
+	}
+	if len(cleanFiles) > 0 {
+		log.Printf("  [CLEANER STATUS] Found %d cleaned result file(s) for '%s'. Cleaning has likely run.", len(cleanFiles), scope)
+	} else {
+		log.Printf("  [CLEANER STATUS] No cleaned result files found for '%s'.", scope)
+	}
+
+	// Note: DB status check would require querying each table, which can be complex.
+	// This file-based check provides a good overview of the pipeline progress.
+	log.Printf("Status check for scope '%s' completed.", scope)
+	return nil
 }
 
 func setupLogging(ctx *MaestroContext) error {

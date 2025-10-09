@@ -1,13 +1,46 @@
 {
     "execution_plans": {
-        "fullHunt": [
-            { "step": "RequestAPI", "description": "Coletando alvos via APIs de bug bounty...", "source": "system" },
-            { "step": "RunScanners", "description": "Executando varreduras nos alvos coletados...", "source": "system" },
-            { "step": "CleanResults", "description": "Limpando e processando resultados das varreduras...", "source": "system" },
-            { "step": "StoreResults", "description": "Armazenando resultados limpos no banco de dados...", "source": "system" }
+        "ShowOptions": [
+            { "step": "CheckEnvPath", "description": "Verificando caminhos de diretórios base...","CallCode": "json_loader.go", "Destiny": "env.json" },
+            { "step": "CheckAPIStatus", "description": "Verificando se a API da plataforma está online...", "CallCode": "request_api.go", "Destiny": "json_loader.go" },
+            { "step": "CheckEnvPath", "description": "Verificando caminhos do diretório para salvar resultados brutos...", "CallCode": "json_loader.go", "Destiny": "env.json" },
+            { "step": "FetchApiScopes", "description": "Buscando escopos brutos das plataformas...", "CallCode": "request_api.go", "Destiny": "json_loader.go" },
+            { "step": "CheckEnvPath", "description": "Verificando arquivos novos na pasta de resultados brutos.", "CallCode": "json_loader.go", "Destiny": "env.json" },
+            { "step": "ProcessApiRawResults", "description": "Portabilizando arquivo para iniciar a limpeza...", "CallCode": "process_results.go", "Destiny": "json_loader.go" },
+            { "step": "CheckEnvPath", "description": "Verificando caminho para o diretório de resultados limpos...", "CallCode": "json_loader.go", "Destiny": "env.json" },
+            { "step": "CleanerApiRawResults", "description": "Limpando resultados brutos das ferramentas utilizando templates...", "CallCode": "cleaner.go", "Destiny": "json_loader.go" },
+            { "step": "CheckEnvPath", "description": "Verificando arquivos prontos para o banco de dados...", "CallCode": "json_loader.go", "Destiny": "env.json" },
+            { "step": "ProcessMove", "description": "Armazenando resultados limpos no diretório correto...", "CallCode": "process_results.go", "Destiny": "json_loader.go" },
+            { "step": "CheckEnvPath", "description": "Verificando comandos para atualização do banco de dados.", "CallCode": "json_loader.go", "Destiny": "env.json" },
+            { "step": "DataBaseStore", "description": "Armazenando resultados limpos no banco de dados...", "CallCode": "db_manager.go", "Destiny": "json_loader.go" },
+            { "step": "GetInfoFromDB", "description": "Verificando conteúdo da tabela ...", "CallCode": "db_manager.go", "Destiny": "main.go"},
+            { "step": "CheckEnvPath", "description": "Verificando caminho para informações temporárias", "CallCode": "json_loader.go", "Destiny": "env.json" },
+            { "step": "ProcessTempStore", "description": "Armazenando resultados temporariamente...", "CallCode": "process_results.go", "Destiny": "json_loader.go" },
+            { "step": "CheckEnvPath", "description": "Verificando existência de informações temporárias", "CallCode": "json_loader.go", "Destiny": "env.json" },
+            { "step": "CleanerReadyMenu", "description": "Formatando informações para mostar opções", "CallCode": "cleaner.go", "Destiny": "json_loader.go"},
+            { "step": "ShowOptions", "description": "Mostrando menu de opções para o usuário.", "CallCode": "cleaner.go", "Destiny": "json_loader.go"},
+            { "step": "ShowInformation", "description": "Passando opções selecionadas.", "CallCode": "process_results.go", "Destiny": "json_loader.go" }
         ],
-        "userDefinedHunt": [
-            { "step": "RequestAPI", "description": "Exemplo de rotina do usuário: Coletando alvos...", "source": "user" }
+        "apiOnly": [
+            { "step": "FetchApiScopes", "description": "Coletando alvos via APIs de bug bounty..." }
+        ],
+        "scanAndStore": [
+            { "step": "RunScanners", "description": "Executando varreduras em alvos pré-existentes..." },
+            { "step": "CleanResults", "description": "Limpando e processando resultados das varreduras..." },
+            { "step": "StoreResults", "description": "Armazenando resultados limpos no banco de dados..." }
+        ],
+        "reconLight": [
+            { "step": "RequestAPI", "description": "Coletando alvos via APIs de bug bounty..." },
+            { "step": "RunScanners", "description": "Executando varreduras rápidas nos alvos coletados..." }
+        ],
+        "listScopes": [
+            { "step": "listScopes", "description": "Listando escopos do banco de dados..." }
+        ],
+        "insertScope": [
+            { "step": "insertScope", "description": "Inserindo escopo manualmente no banco de dados..." }
+        ],
+        "checkScopeStatus": [
+            { "step": "checkScopeStatus", "description": "Verificando status de processamento de um escopo..." }
         ]
     }
 }
