@@ -379,3 +379,19 @@ func RunRequestAPI(apiDirtResultsPath string, platform string, tokens Tokens) er
 	fmt.Printf("Success! %d scopes from platform '%s' saved to: %s\n", len(allScopes), platform, apiDirtResultsPath)
 	return nil
 }
+
+// CheckAPIStatus is a placeholder for the function that checks the platform's API status.
+func CheckAPIStatus(destiny string) error {
+	fmt.Printf("Function 'CheckAPIStatus' called with destiny: %s\n", destiny)
+	// TODO: Implement the actual logic for checking API status.
+	// This might involve making a simple request to a health check endpoint.
+	return nil
+}
+
+// FetchApiScopes is a placeholder for the function that fetches scopes from the API.
+func FetchApiScopes(destiny string) error {
+	fmt.Printf("Function 'FetchApiScopes' called with destiny: %s\n", destiny)
+	// TODO: Implement the actual logic for fetching API scopes.
+	// This would likely call RunRequestAPI or a similar function.
+	return nil
+}

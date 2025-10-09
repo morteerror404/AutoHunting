@@ -1,6 +1,6 @@
 {
     "execution_plans": {
-        "ShowOptions": [
+        "FetchApiAndShowOptions": [
             { "step": "CheckEnvPath", "description": "Verificando caminhos de diretórios base...","CallCode": "json_loader.go", "Destiny": "env.json" },
             { "step": "CheckAPIStatus", "description": "Verificando se a API da plataforma está online...", "CallCode": "request_api.go", "Destiny": "json_loader.go" },
             { "step": "CheckEnvPath", "description": "Verificando caminhos do diretório para salvar resultados brutos...", "CallCode": "json_loader.go", "Destiny": "env.json" },
@@ -16,13 +16,12 @@
             { "step": "GetInfoFromDB", "description": "Verificando conteúdo da tabela ...", "CallCode": "db_manager.go", "Destiny": "main.go"},
             { "step": "CheckEnvPath", "description": "Verificando caminho para informações temporárias", "CallCode": "json_loader.go", "Destiny": "env.json" },
             { "step": "ProcessTempStore", "description": "Armazenando resultados temporariamente...", "CallCode": "process_results.go", "Destiny": "json_loader.go" },
-            { "step": "CheckEnvPath", "description": "Verificando existência de informações temporárias", "CallCode": "json_loader.go", "Destiny": "env.json" },
-            { "step": "CleanerReadyMenu", "description": "Formatando informações para mostar opções", "CallCode": "cleaner.go", "Destiny": "json_loader.go"},
-            { "step": "ShowOptions", "description": "Mostrando menu de opções para o usuário.", "CallCode": "cleaner.go", "Destiny": "json_loader.go"},
-            { "step": "ShowInformation", "description": "Passando opções selecionadas.", "CallCode": "process_results.go", "Destiny": "json_loader.go" }
-        ],
-        "apiOnly": [
-            { "step": "FetchApiScopes", "description": "Coletando alvos via APIs de bug bounty..." }
+            { "step": "CheckEnvPath", "description": "Verificando existência de informações temporárias.", "CallCode": "json_loader.go", "Destiny": "env.json" },
+            { "step": "CleanerReadyMenu", "description": "Formatando informações para mostar opções.", "CallCode": "cleaner.go", "Destiny": "json_loader.go"},
+            { "step": "ShowOptions", "description": "Mostrando menu de opções para o usuário.", "CallCode": "show_time.go", "Destiny": "json_loader.go"},
+            { "step": "CheckEnvPath", "description": "Verificando e salvando opções selecionadas...", "CallCode": "json_loader.go", "Destiny": "env.json" },
+            { "step": "ShowInformation", "description": "Passando opções selecionadas para a rotina de execussão...", "CallCode": "process_results.go", "Destiny": "json_loader.go" },
+            { "step": "ShowExecutionPlan", "description": "Tudo pronto, aguardando opções de execussão do usuário...", "CallCode": "show_time.go", "Destiny": "json_loader.go"}
         ],
         "scanAndStore": [
             { "step": "RunScanners", "description": "Executando varreduras em alvos pré-existentes..." },

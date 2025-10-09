@@ -165,3 +165,31 @@ uniqueScopes[line] = struct{}{}
 	fmt.Printf("Processamento de escopo concluído. %d alvos únicos salvos em: %s\n", count, outputFile)
 	return nil
 }
+
+// ProcessApiRawResults is a placeholder for processing raw API results.
+func ProcessApiRawResults(destiny string) error {
+	fmt.Printf("Function 'ProcessApiRawResults' called with destiny: %s\n", destiny)
+	// TODO: Implement logic, possibly calling ProcessAndUnifyScopes.
+	return nil
+}
+
+// ProcessMove is a placeholder for moving processed files.
+func ProcessMove(destiny string) error {
+	fmt.Printf("Function 'ProcessMove' called with destiny: %s\n", destiny)
+	// TODO: Implement logic for moving files to a destination.
+	return nil
+}
+
+// ProcessTempStore is a placeholder for storing temporary results.
+func ProcessTempStore(destiny string) error {
+	fmt.Printf("Function 'ProcessTempStore' called with destiny: %s\n", destiny)
+	// TODO: Implement logic for saving temporary data.
+	return nil
+}
+
+// ShowInformation is a placeholder for showing information to the user.
+func ShowInformation(destiny string) error {
+	fmt.Printf("Function 'ShowInformation' called with destiny: %s\n", destiny)
+	// TODO: Implement logic to display information.
+	return nil
+}
