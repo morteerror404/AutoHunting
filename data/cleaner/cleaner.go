@@ -120,3 +120,17 @@ func CleanFile(filename string, templateName string) error {
 	fmt.Printf("Success! Cleaned data from template '%s' saved to: %s\n", templateName, outputFilePath)
 	return nil
 }
+
+// CleanerApiRawResults is a placeholder for cleaning raw API results.
+func CleanerApiRawResults(destiny string) error {
+	fmt.Printf("Function 'CleanerApiRawResults' called with destiny: %s\n", destiny)
+	// TODO: Implement logic, possibly calling CleanFile.
+	return nil
+}
+
+// CleanerReadyMenu is a placeholder for formatting a menu.
+func CleanerReadyMenu(destiny string) error {
+	fmt.Printf("Function 'CleanerReadyMenu' called with destiny: %s\n", destiny)
+	// TODO: Implement logic to prepare data for a menu display.
+	return nil
+}
